@@ -39,6 +39,12 @@ const swaggerResources = [
     location: "/demo/sample-notify/v3/api-docs",
     swaggerVersion: "2.0",
   },
+  {
+    name: "mobile-app",
+    url: "/gateway/mobile-app/v2/api-docs",
+    location: "/gateway/mobile-app/v2/api-docs",
+    swaggerVersion: "2.0",
+  },
 ];
 
 const specs: Record<string, unknown> = {
@@ -213,6 +219,36 @@ const specs: Record<string, unknown> = {
           properties: {
             success: { type: "boolean" },
             messageId: { type: "string" },
+          },
+        },
+      },
+    },
+  },
+  "/gateway/mobile-app/v2/api-docs": {
+    swagger: "2.0",
+    info: { title: "Mobile App API", version: "1.0.0" },
+    basePath: "/gateway",
+    tags: [{ name: "RecordLookup" }],
+    paths: {
+      "/records/items/by-key": {
+        get: {
+          tags: ["RecordLookup"],
+          summary: "Get records by key",
+          description: "Query records with itemKey",
+          operationId: "getRecordsByKey",
+          parameters: [
+            {
+              name: "itemKey",
+              in: "query",
+              required: true,
+              type: "string",
+              description: "Record key",
+            },
+          ],
+          responses: {
+            "200": {
+              description: "OK",
+            },
           },
         },
       },

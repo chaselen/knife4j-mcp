@@ -167,6 +167,39 @@ async function main(): Promise<void> {
     );
   }
 
+  const prefixedFindApi = await client.request(
+    {
+      method: "tools/call",
+      params: {
+        name: "find_api",
+        arguments: {
+          path: "/gateway/mobile-app/records/items/by-key",
+          limit: 3,
+        },
+      },
+    },
+    CallToolResultSchema
+  );
+  console.log("find_api_prefixed_path");
+  console.log(JSON.stringify(prefixedFindApi.structuredContent, null, 2));
+
+  const prefixedFindApiPayload = requireStructuredContent<FindApiResult>(
+    prefixedFindApi.structuredContent,
+    "find_api(prefixed path)"
+  );
+  const prefixedApi = prefixedFindApiPayload.results.find(
+    (item) =>
+      item.module === "mobile-app" &&
+      item.path === "/records/items/by-key" &&
+      item.method === "get"
+  );
+
+  if (!prefixedApi) {
+    throw new Error(
+      "Smoke test could not resolve prefixed route /gateway/mobile-app/records/items/by-key"
+    );
+  }
+
   await transport.close();
 }
 
