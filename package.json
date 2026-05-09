@@ -1,9 +1,28 @@
 {
-  "name": "knife4j-mcp",
+  "name": "@chaselen/knife4j-mcp",
   "version": "0.1.0",
   "description": "MCP server for querying Knife4j / Swagger multi-module API docs",
   "type": "module",
-  "main": "dist/src/index.js",
+  "main": "./dist/src/index.js",
+  "bin": {
+    "knife4j-mcp": "./dist/src/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chaselen/knife4j-mcp.git"
+  },
+  "homepage": "https://github.com/chaselen/knife4j-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/chaselen/knife4j-mcp/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "node --import tsx src/index.ts",
@@ -11,7 +30,8 @@
     "mock:swagger": "node dist/examples/mock-swagger-server.js",
     "mock:swagger:dev": "node --import tsx examples/mock-swagger-server.ts",
     "test:smoke": "node dist/scripts/smoke-test.js",
-    "check": "tsc --noEmit -p tsconfig.json"
+    "check": "tsc --noEmit -p tsconfig.json",
+    "prepublishOnly": "npm run build"
   },
   "keywords": [
     "mcp",
