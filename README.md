@@ -1,6 +1,6 @@
 # knife4j-mcp
 
-一个基于 Node.js + TypeScript 的标准 MCP server（stdio），用于读取 Knife4j / Swagger 多模块接口文档，并为 Codex Agent 提供结构化接口查询能力。
+一个基于 Node.js + TypeScript 的标准 MCP server（stdio），用于读取 Knife4j / Swagger 多模块接口文档，并为 Agent 提供结构化接口查询能力。
 
 它适合这样的场景：
 
@@ -10,77 +10,109 @@
 - 文档可能受 Basic Auth 或自定义 Header 保护
 - Agent 需要根据路径、关键词、tag、字段线索快速定位接口
 
-## 功能
+## 使用方式
 
-- 启动时读取 `SWAGGER_RESOURCES_URL`
-- 自动拉取 `swagger-resources` 和每个模块的 spec
-- 兼容相对路径补全
-- 兼容 Swagger 2.0，尽量兼容 OpenAPI 3
-- 内存索引支持：
-  - 完整路径查找
-  - 路径片段模糊搜索
-  - tag 搜索
-  - summary / description / operationId 搜索
-  - 返回接口所属模块
-- 支持模块 allowlist
-- 支持缓存 TTL 和手动刷新
-- 单个模块失败不会拖垮整个服务
+```bash
+SWAGGER_RESOURCES_URL=http://127.0.0.1:3301/swagger-resources \
+npx -y @chaselen/knife4j-mcp
+```
 
-## MCP Tools
+如果文档受保护，也可以一起传认证信息：
 
-### `list_specs`
+```bash
+SWAGGER_RESOURCES_URL=http://127.0.0.1:3301/swagger-resources \
+SWAGGER_BASIC_AUTH=demo:demo \
+npx -y @chaselen/knife4j-mcp
+```
 
-列出所有模块、spec 地址、加载状态、类型和接口数量。
+说明：
 
-### `find_api`
+- 已发布到 npm，可直接通过 `npx` 启动
+- 要求 Node.js >= 20
+- 这是一个 stdio MCP server，通常由 MCP Client 拉起，而不是手动长期在终端里交互运行
 
-支持以下入参：
+## MCP Client 接入
 
-- `query`：关键词，搜 path / summary / description / operationId / tags / 参数名
-- `path`：完整路径或路径片段
-- `tag`
-- `module`
-- `method`
-- `limit`
+这个包不只支持 Codex，也支持 Claude Code、OpenCode，以及其他支持本地 stdio MCP 的客户端。
 
-每条结果至少包含：
+本质上都可以抽象成下面这组启动参数：
 
-- `module`
-- `method`
-- `path`
-- `summary`
-- `operationId`
-- `tags`
-- `specUrl`
+```json
+{
+  "command": "npx",
+  "args": ["-y", "@chaselen/knife4j-mcp"],
+  "env": {
+    "SWAGGER_RESOURCES_URL": "http://127.0.0.1:3301/swagger-resources",
+    "SWAGGER_BASIC_AUTH": "demo:demo"
+  }
+}
+```
 
-### `get_api_detail`
+### Codex CLI
 
-入参：
+```bash
+codex mcp add knife4j-swagger \
+  --env SWAGGER_RESOURCES_URL=http://127.0.0.1:3301/swagger-resources \
+  --env SWAGGER_BASIC_AUTH=demo:demo \
+  -- npx -y @chaselen/knife4j-mcp
+```
 
-- `module`
-- `path`
-- `method`
+### Claude Code
 
-返回内容包括：
+CLI 添加方式：
 
-- `module`
-- `method`
-- `path`
-- `summary`
-- `description`
-- `tags`
-- `consumes`
-- `produces`
-- `parameters`
-- `requestBody`
-- `responses`
-- `relatedRefs`（从 definitions / schemas / components 中提取的直接引用摘要）
-- `rawOperation`
-- `specUrl`
+```bash
+claude mcp add knife4j-swagger \
+  --env SWAGGER_RESOURCES_URL=http://127.0.0.1:3301/swagger-resources \
+  --env SWAGGER_BASIC_AUTH=demo:demo \
+  -- npx -y @chaselen/knife4j-mcp
+```
 
-### `refresh_specs`
+如果你偏好项目级配置，也可以在项目根目录放一个 `.mcp.json`：
 
-强制重新拉取 `swagger-resources` 和所有模块 spec。
+```json
+{
+  "mcpServers": {
+    "knife4j-swagger": {
+      "command": "npx",
+      "args": ["-y", "@chaselen/knife4j-mcp"],
+      "env": {
+        "SWAGGER_RESOURCES_URL": "http://127.0.0.1:3301/swagger-resources",
+        "SWAGGER_BASIC_AUTH": "demo:demo"
+      }
+    }
+  }
+}
+```
+
+### OpenCode
+
+在 `opencode.json` 或 `opencode.jsonc` 中加入：
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "knife4j-swagger": {
+      "type": "local",
+      "command": ["npx", "-y", "@chaselen/knife4j-mcp"],
+      "enabled": true,
+      "environment": {
+        "SWAGGER_RESOURCES_URL": "http://127.0.0.1:3301/swagger-resources",
+        "SWAGGER_BASIC_AUTH": "demo:demo"
+      }
+    }
+  }
+}
+```
+
+### 其他客户端
+
+如果你的 MCP 客户端支持本地 stdio server，通常只要把下面三类信息按它自己的格式填进去即可：
+
+- `command`: `npx`
+- `args`: `["-y", "@chaselen/knife4j-mcp"]`
+- `env`: `SWAGGER_RESOURCES_URL`、`SWAGGER_BASIC_AUTH`、`SWAGGER_HEADERS` 等环境变量
 
 ## 环境变量
 
@@ -103,26 +135,32 @@
 - `LOG_LEVEL`
   - 设为 `debug` 时输出更多日志
 
-## 安装
+## MCP Tools
 
-```bash
-npm install
-```
+对外只提供 4 个核心 tools：
 
-## 本地启动 MCP server
+- `list_specs`：列出模块、spec 地址、加载状态和接口数量
+- `find_api`：按关键词、path、tag、module、method 搜索接口
+- `get_api_detail`：获取单个接口的完整详情
+- `refresh_specs`：强制刷新 `swagger-resources` 和所有模块 spec
 
-### 开发模式
+README 这里保留概览即可；更细的 tool 行为、字段约束和实现边界可以看仓库里的 `AGENTS.md`。
 
-```bash
-SWAGGER_RESOURCES_URL=http://127.0.0.1:3301/swagger-resources npm run dev
-```
+## 功能
 
-### 构建后运行
-
-```bash
-npm run build
-SWAGGER_RESOURCES_URL=http://127.0.0.1:3301/swagger-resources npm start
-```
+- 启动时读取 `SWAGGER_RESOURCES_URL`
+- 自动拉取 `swagger-resources` 和每个模块的 spec
+- 兼容相对路径补全
+- 兼容 Swagger 2.0，尽量兼容 OpenAPI 3
+- 内存索引支持：
+  - 完整路径查找
+  - 路径片段模糊搜索
+  - tag 搜索
+  - summary / description / operationId 搜索
+  - 返回接口所属模块
+- 支持模块 allowlist
+- 支持缓存 TTL 和手动刷新
+- 单个模块失败不会拖垮整个服务
 
 ## 最小可运行示例
 
@@ -169,77 +207,6 @@ npm run test:smoke
 - 取返回的第一条接口再调用 `get_api_detail`
 
 这样更适合真实 Knife4j 环境，不要求某个特定 path 必须存在。
-
-## 如何本地验证
-
-### 验证 1：确认已加载多个 spec
-
-运行：
-
-```bash
-SWAGGER_RESOURCES_URL=http://127.0.0.1:3301/swagger-resources \
-SWAGGER_BASIC_AUTH=demo:demo \
-npm run test:smoke
-```
-
-观察 `list_specs` 输出，应该能看到多个模块，例如：
-
-- `sample-account`
-- `sample-auth`
-- `sample-notify`
-
-并且有 `loadedModules`、`failedModules`、`totalOperations` 等汇总信息。
-
-### 验证 2：测试 `find_api`
-
-smoke test 会自动选择一个 `status = "loaded"` 且 `operationCount > 0` 的模块，
-然后以该模块名调用一次 `find_api`。
-
-预期结果：
-
-- `results` 至少返回 1 条接口
-- 返回结果里的 `module` 与自动选中的模块一致
-
-### 验证 3：测试 `get_api_detail`
-
-smoke test 会取 `find_api` 返回的第一条接口，继续调用 `get_api_detail`。
-
-预期可看到：
-
-- `summary`
-- `parameters`
-- `responses`
-- `relatedRefs`
-- `rawOperation`
-
-## 接入 Codex
-
-可以直接用 Codex CLI 添加：
-
-```bash
-codex mcp add knife4j-swagger \
-  --env SWAGGER_RESOURCES_URL=http://127.0.0.1:3301/swagger-resources \
-  --env SWAGGER_BASIC_AUTH=demo:demo \
-  -- node /ABSOLUTE/PATH/TO/knife4j-mcp/dist/src/index.js
-```
-
-或者把下面内容加入 `.codex/config.toml`：
-
-```toml
-[mcp_servers.knife4j-swagger]
-command = "node"
-args = ["/ABSOLUTE/PATH/TO/knife4j-mcp/dist/src/index.js"]
-
-[mcp_servers.knife4j-swagger.env]
-SWAGGER_RESOURCES_URL = "http://127.0.0.1:3301/swagger-resources"
-SWAGGER_BASIC_AUTH = "demo:demo"
-# SWAGGER_BASE_URL = "http://127.0.0.1:3301"
-# SWAGGER_HEADERS = "{\"X-Env\":\"dev\"}"
-# SWAGGER_MODULE_ALLOWLIST = "sample-account,sample-auth"
-# CACHE_TTL_MS = "300000"
-```
-
-仓库里也放了一份示例文件：[.codex/config.toml](/Users/lancely/project/knife4j-mcp/.codex/config.toml)
 
 ## 代码结构
 
