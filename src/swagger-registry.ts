@@ -2,9 +2,12 @@ import { loadConfig } from "./config.js";
 import { fetchJson, resolveUrl } from "./http.js";
 import { logger } from "./logger.js";
 import {
-  collectRelatedRefs,
+  collectExpandedRelatedRefs,
   detectSpecType,
   extractApiEntries,
+  resolveParameter,
+  resolveRequestBody,
+  resolveResponses,
 } from "./swagger-parser.js";
 import {
   ApiIndexEntry,
@@ -487,8 +490,19 @@ export class SwaggerRegistry {
 
     const moduleSpec = this.moduleSpecs.get(entry.module);
     const relatedRefs = moduleSpec
-      ? collectRelatedRefs(entry, moduleSpec.rawSpec)
+      ? collectExpandedRelatedRefs(entry, moduleSpec.rawSpec)
       : [];
+    const resolvedParameters = moduleSpec
+      ? entry.parameters.map((parameter) =>
+          resolveParameter(parameter, moduleSpec.rawSpec)
+        )
+      : [];
+    const resolvedRequestBody = moduleSpec
+      ? resolveRequestBody(entry.requestBody, moduleSpec.rawSpec)
+      : null;
+    const resolvedResponses = moduleSpec
+      ? resolveResponses(entry.responses, moduleSpec.rawSpec)
+      : {};
 
     return {
       module: entry.module,
@@ -500,8 +514,11 @@ export class SwaggerRegistry {
       consumes: entry.consumes ?? [],
       produces: entry.produces ?? [],
       parameters: entry.parameters,
+      resolvedParameters,
       requestBody: entry.requestBody ?? null,
+      resolvedRequestBody,
       responses: entry.responses ?? {},
+      resolvedResponses,
       relatedRefs,
       rawOperation: entry.operation,
       specUrl: entry.specUrl,

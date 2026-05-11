@@ -171,27 +171,18 @@ npx -y @chaselen/knife4j-mcp
 
 - `list_specs`：列出模块、spec 地址、加载状态和接口数量
 - `find_api`：按关键词、path、tag、module、method 搜索接口
-- `get_api_detail`：获取单个接口的完整详情
+- `get_api_detail`：获取单个接口的完整详情，并递归展开请求/响应 schema
 - `refresh_specs`：强制刷新 `swagger-resources` 和所有模块 spec
-
-README 这里保留概览即可；更细的 tool 行为、字段约束和实现边界可以看仓库里的 `AGENTS.md`。
 
 ## 功能
 
-- 启动时读取 `SWAGGER_RESOURCES_URL`
-- 自动拉取 `swagger-resources` 和每个模块的 spec
-- 兼容相对路径补全
-- 兼容 Swagger 2.0，尽量兼容 OpenAPI 3
-- 内存索引支持：
-  - 完整路径查找
-  - 识别带网关前缀 / 模块前缀的完整路由，例如 `/gateway/mobile-app/records/items/by-key`
-  - 路径片段模糊搜索
-  - tag 搜索
-  - summary / description / operationId 搜索
-  - 返回接口所属模块
-- 支持模块 allowlist
-- 支持缓存 TTL 和手动刷新
-- 单个模块失败不会拖垮整个服务
+- 支持读取 Knife4j / Swagger 多模块聚合文档
+- 支持 Basic Auth 和自定义 Header
+- 支持 Swagger 2.0，并尽量兼容 OpenAPI 3
+- 支持按路径、关键词、tag、method 等条件搜索接口
+- 支持通过 `get_api_detail` 获取完整接口详情，并递归展开请求/响应 schema
+- 支持模块 allowlist、缓存 TTL 和手动刷新
+- 单个模块加载失败不会影响其他模块可用
 
 ## 最小可运行示例
 
@@ -231,36 +222,4 @@ npm run test:smoke
 - `find_api`
 - `get_api_detail`
 
-其中 smoke test 不再依赖固定示例接口，而是会：
-
-- 从 `list_specs` 结果中选取第一个成功加载且包含接口的模块
-- 用该模块调用一次 `find_api`
-- 取返回的第一条接口再调用 `get_api_detail`
-
-这样更适合真实 Knife4j 环境，不要求某个特定 path 必须存在。
-
-### `find_api` 使用建议
-
-- 已知模块时，优先传 `module + path`，例如 `module=mobile-app`、`path=/records/items/by-key`
-- 只知道网关完整路由时，也可以直接传 `path=/gateway/mobile-app/records/items/by-key`
-- 如果是自然语言或混合关键词，建议把模块名或 path 片段一起放进 `query`，可以减少误召回
-
-## 代码结构
-
-- [src/index.ts](/Users/lancely/project/knife4j-mcp/src/index.ts)：启动入口
-- [src/server.ts](/Users/lancely/project/knife4j-mcp/src/server.ts)：MCP tools 注册
-- [src/swagger-registry.ts](/Users/lancely/project/knife4j-mcp/src/swagger-registry.ts)：spec 拉取、缓存、索引、查询
-- [src/swagger-parser.ts](/Users/lancely/project/knife4j-mcp/src/swagger-parser.ts)：Swagger 2 / OAS3 统一抽取
-- [src/http.ts](/Users/lancely/project/knife4j-mcp/src/http.ts)：认证与请求封装
-- [examples/mock-swagger-server.ts](/Users/lancely/project/knife4j-mcp/examples/mock-swagger-server.ts)：本地 mock 服务
-- [scripts/smoke-test.ts](/Users/lancely/project/knife4j-mcp/scripts/smoke-test.ts)：最小联调验证
-
-## 当前实现说明
-
-这是一个优先可运行的最小版本，已经覆盖你列出的核心能力。后续如果要继续增强，比较自然的方向有：
-
-- 搜索结果排序进一步细化
-- 更深层的 `$ref` 展开与去重
-- 针对字段名的专门索引
-- 持久化缓存或增量刷新
-- 更丰富的 OpenAPI 3 requestBody / schema 展开
+它会自动完成一次 `list_specs -> find_api -> get_api_detail` 的最小联调验证。

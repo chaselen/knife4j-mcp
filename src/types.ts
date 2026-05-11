@@ -100,3 +100,37 @@ export interface RefSummary {
   propertyKeys?: string[];
   raw: unknown;
 }
+
+export interface ExpandedSchemaNode {
+  kind:
+    | "object"
+    | "array"
+    | "primitive"
+    | "enum"
+    | "union"
+    | "intersection"
+    | "ref"
+    | "unknown";
+  type?: string;
+  format?: string;
+  description?: string;
+  nullable?: boolean;
+  enumValues?: unknown[];
+  required?: string[];
+  ref?: string;
+  refName?: string;
+  properties?: Record<string, ExpandedSchemaNode>;
+  items?: ExpandedSchemaNode;
+  variants?: ExpandedSchemaNode[];
+  additionalProperties?: boolean | ExpandedSchemaNode;
+  raw?: unknown;
+}
+
+export interface ExpandedParameter {
+  name?: string;
+  in?: string;
+  required?: boolean;
+  description?: string;
+  schema: ExpandedSchemaNode | null;
+  raw: unknown;
+}

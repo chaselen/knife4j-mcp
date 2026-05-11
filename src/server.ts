@@ -21,7 +21,7 @@ export function createServer(registry: SwaggerRegistry): McpServer {
     {
       title: "List Swagger Specs",
       description:
-        "List aggregated Knife4j / Swagger modules and their spec loading status.",
+        "List aggregated Knife4j / Swagger modules and their loading status. Use this for module discovery and diagnostics, not for reading API details or fetching spec URLs directly.",
       outputSchema: {
         refreshedAt: z.string(),
         resourcesUrl: z.string(),
@@ -57,7 +57,7 @@ export function createServer(registry: SwaggerRegistry): McpServer {
     {
       title: "Find API",
       description:
-        "Find APIs by exact path, path fragment, keyword, tag, module, or method.",
+        "Find candidate APIs by path, keyword, tag, module, or method. After locating a candidate, call get_api_detail with its module, path, and method to read the full indexed API documentation instead of fetching Swagger/OpenAPI spec URLs directly.",
       inputSchema: {
         query: z.string().optional(),
         path: z.string().optional(),
@@ -110,7 +110,7 @@ export function createServer(registry: SwaggerRegistry): McpServer {
     {
       title: "Get API Detail",
       description:
-        "Get full API documentation by module name, exact path, and HTTP method.",
+        "Preferred tool for full API documentation. Use module + exact path + HTTP method to read the server-indexed API detail, including recursively expanded request and response schemas. Do not fetch /v2/api-docs, /v3/api-docs, or spec URLs directly.",
       inputSchema: {
         module: z.string(),
         path: z.string(),
@@ -145,7 +145,7 @@ export function createServer(registry: SwaggerRegistry): McpServer {
     {
       title: "Refresh Swagger Specs",
       description:
-        "Reload swagger-resources and all module specs, while keeping partial failures isolated.",
+        "Force a reload of swagger-resources and all module specs while keeping partial failures isolated. Use this when upstream docs changed or when a previous lookup returned stale results.",
       outputSchema: {
         refreshedAt: z.string(),
         resourcesUrl: z.string(),
