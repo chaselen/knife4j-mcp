@@ -1,6 +1,52 @@
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { SwaggerRegistry } from "./swagger-registry.js";
+
+/** npm 包名称 */
+const PACKAGE_NAME = "@chaselen/knife4j-mcp";
+
+/** package.json 中使用的包信息 */
+interface PackageMetadata {
+  name?: unknown;
+  version?: unknown;
+}
+
+/**
+ * 从当前源码或编译产物目录向上查找 package.json，并读取服务版本。
+ */
+function readPackageVersion(): string {
+  let directory = dirname(fileURLToPath(import.meta.url));
+
+  while (true) {
+    const packagePath = resolve(directory, "package.json");
+    if (existsSync(packagePath)) {
+      const metadata = JSON.parse(
+        readFileSync(packagePath, "utf8")
+      ) as PackageMetadata;
+      if (
+        metadata.name === PACKAGE_NAME &&
+        typeof metadata.version === "string" &&
+        metadata.version.length > 0
+      ) {
+        return metadata.version;
+      }
+    }
+
+    const parentDirectory = dirname(directory);
+    if (parentDirectory === directory) {
+      break;
+    }
+    directory = parentDirectory;
+  }
+
+  throw new Error(`Could not find package.json for ${PACKAGE_NAME}`);
+}
+
+/** 当前 MCP 服务版本 */
+export const PACKAGE_VERSION = readPackageVersion();
 
 function jsonText(value: unknown): string {
   return JSON.stringify(value, null, 2);
@@ -13,7 +59,7 @@ function structured(value: unknown): Record<string, unknown> {
 export function createServer(registry: SwaggerRegistry): McpServer {
   const server = new McpServer({
     name: "knife4j-mcp",
-    version: "0.3.0",
+    version: PACKAGE_VERSION,
   });
 
   server.registerTool(

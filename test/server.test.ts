@@ -6,7 +6,7 @@ import {
   CallToolResultSchema,
   ListToolsResultSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { createServer } from "../src/server.js";
+import { createServer, PACKAGE_VERSION } from "../src/server.js";
 import { SwaggerRegistry } from "../src/swagger-registry.js";
 import { SwaggerServerConfig } from "../src/types.js";
 
@@ -68,6 +68,7 @@ test("MCP tools expose schema-valid structured responses", async () => {
   try {
     await server.connect(serverTransport);
     await client.connect(clientTransport);
+    assert.equal(client.getServerVersion()?.version, PACKAGE_VERSION);
 
     const tools = await client.request(
       { method: "tools/list", params: {} },
