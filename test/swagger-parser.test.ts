@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { extractApiEntries, resolveParameter } from "../src/swagger-parser.js";
-import { LoadedModuleSpec } from "../src/types.js";
+import { extractApiEntries, resolveParameter } from "../src/swagger-parser.ts";
+import { LoadedModuleSpec } from "../src/types.ts";
 
 test("operation parameters override matching path parameters", () => {
   const moduleSpec: LoadedModuleSpec = {

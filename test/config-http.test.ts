@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { loadConfig } from "../src/config.js";
-import { resolveUrl } from "../src/http.js";
+import { loadConfig } from "../src/config.ts";
+import { resolveUrl } from "../src/http.ts";
 
 test("loadConfig provides a request timeout and accepts an override", () => {
   const defaults = loadConfig({

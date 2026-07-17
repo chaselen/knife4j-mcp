@@ -1,4 +1,4 @@
-import { SwaggerServerConfig } from "./types.js";
+import { SwaggerServerConfig } from "./types.ts";
 
 const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 15 * 1000;

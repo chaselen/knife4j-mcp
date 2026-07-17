@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { SwaggerRegistry } from "../src/swagger-registry.js";
-import { SwaggerServerConfig } from "../src/types.js";
+import { SwaggerRegistry } from "../src/swagger-registry.ts";
+import { SwaggerServerConfig } from "../src/types.ts";
 
 const config: SwaggerServerConfig = {
   swaggerResourcesUrl: "https://gateway.example/swagger-resources",

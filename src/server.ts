@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { SwaggerRegistry } from "./swagger-registry.js";
+import { SwaggerRegistry } from "./swagger-registry.ts";
 
 /** npm 包名称 */
 const PACKAGE_NAME = "@chaselen/knife4j-mcp";

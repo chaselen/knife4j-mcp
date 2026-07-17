@@ -1,5 +1,5 @@
-import { fetchJson } from "./http.js";
-import { SwaggerServerConfig } from "./types.js";
+import { fetchJson } from "./http.ts";
+import { SwaggerServerConfig } from "./types.ts";
 
 const EXTERNAL_DOCUMENTS_KEY = "x-knife4j-mcp-external-documents";
 

@@ -5,7 +5,7 @@ import {
   HttpMethod,
   LoadedModuleSpec,
   RefSummary,
-} from "./types.js";
+} from "./types.ts";
 
 const METHODS: HttpMethod[] = [
   "get",

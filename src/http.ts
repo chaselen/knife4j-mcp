@@ -1,5 +1,5 @@
-import { logger } from "./logger.js";
-import { SwaggerServerConfig } from "./types.js";
+import { logger } from "./logger.ts";
+import { SwaggerServerConfig } from "./types.ts";
 
 function buildHeaders(config: SwaggerServerConfig): Headers {
   const headers = new Headers(config.headers);

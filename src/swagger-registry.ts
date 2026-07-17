@@ -1,7 +1,7 @@
-import { loadConfig } from "./config.js";
-import { fetchJson, resolveUrl } from "./http.js";
-import { logger } from "./logger.js";
-import { bundleExternalRefs } from "./swagger-bundler.js";
+import { loadConfig } from "./config.ts";
+import { fetchJson, resolveUrl } from "./http.ts";
+import { logger } from "./logger.ts";
+import { bundleExternalRefs } from "./swagger-bundler.ts";
 import {
   collectExpandedRelatedRefs,
   detectSpecType,
@@ -9,7 +9,7 @@ import {
   resolveParameter,
   resolveRequestBody,
   resolveResponses,
-} from "./swagger-parser.js";
+} from "./swagger-parser.ts";
 import {
   ApiIndexEntry,
   ApiSearchResult,
@@ -20,7 +20,7 @@ import {
   SpecSummary,
   SwaggerResource,
   SwaggerServerConfig,
-} from "./types.js";
+} from "./types.ts";
 
 /**
  * 从 swagger-resources 条目里提取模块名。
