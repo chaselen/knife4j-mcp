@@ -52,6 +52,27 @@ test("loadConfig validates the external reference limit", () => {
   );
 });
 
+test("loadConfig normalizes allowed external reference origins", () => {
+  const configured = loadConfig({
+    SWAGGER_RESOURCES_URL: "https://gateway.example/swagger-resources",
+    SWAGGER_EXTERNAL_REF_ORIGINS:
+      "https://schemas.example/models, http://localhost:8080/path",
+  });
+
+  assert.deepEqual(configured.externalRefOrigins, new Set([
+    "https://schemas.example",
+    "http://localhost:8080",
+  ]));
+  assert.throws(
+    () =>
+      loadConfig({
+        SWAGGER_RESOURCES_URL: "https://gateway.example/swagger-resources",
+        SWAGGER_EXTERNAL_REF_ORIGINS: "file:///tmp/schema.json",
+      }),
+    /HTTP\(S\)/
+  );
+});
+
 test("resolveUrl uses the selected spec base for relative module URLs", () => {
   const config = loadConfig({
     SWAGGER_RESOURCES_URL: "https://gateway.example/swagger-resources",

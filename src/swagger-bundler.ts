@@ -46,6 +46,7 @@ export async function bundleExternalRefs(
   }
 
   const rootDocumentUrl = splitReference(sourceUrl, sourceUrl).documentUrl;
+  const rootOrigin = new URL(rootDocumentUrl).origin;
   const documents = new Map<string, Record<string, unknown>>();
   const pending = new Map<string, Promise<Record<string, unknown>>>();
   const rewrittenDocuments = new Set<string>();
@@ -64,6 +65,19 @@ export async function bundleExternalRefs(
     if (documents.size + pending.size >= config.externalRefLimit) {
       throw new Error(
         `External $ref document limit exceeded (${config.externalRefLimit})`
+      );
+    }
+
+    const target = new URL(url);
+    if (target.protocol !== "http:" && target.protocol !== "https:") {
+      throw new Error(`External $ref uses unsupported protocol: ${target.protocol}`);
+    }
+    if (
+      target.origin !== rootOrigin &&
+      !config.externalRefOrigins?.has(target.origin)
+    ) {
+      throw new Error(
+        `Cross-origin external $ref is not allowed: ${target.origin}`
       );
     }
 

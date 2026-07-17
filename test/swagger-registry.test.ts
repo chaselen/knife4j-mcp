@@ -380,6 +380,58 @@ test("external schema references are bundled and recursively expanded", async ()
   }
 });
 
+test("cross-origin external references require an explicit allowlist", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/swagger-resources")) {
+      return jsonResponse([{ name: "users", url: "/users.json" }]);
+    }
+    if (url.startsWith("https://schemas.example")) {
+      return jsonResponse({ User: { type: "object" } });
+    }
+    return jsonResponse({
+      openapi: "3.0.3",
+      paths: {
+        "/users": {
+          get: {
+            responses: {
+              "200": {
+                content: {
+                  "application/json": {
+                    schema: {
+                      $ref: "https://schemas.example/models.json#/User",
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+  };
+
+  try {
+    const denied = new SwaggerRegistry(config);
+    const deniedResult = await denied.refresh();
+    assert.equal(deniedResult.failedModules, 1);
+    assert.match(
+      deniedResult.modules[0]?.error ?? "",
+      /Cross-origin external \$ref is not allowed/
+    );
+
+    const allowed = new SwaggerRegistry({
+      ...config,
+      externalRefOrigins: new Set(["https://schemas.example"]),
+    });
+    const allowedResult = await allowed.refresh();
+    assert.equal(allowedResult.loadedModules, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("search returns stable pagination metadata and supports filters", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {

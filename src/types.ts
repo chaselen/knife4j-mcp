@@ -67,6 +67,8 @@ export interface SwaggerServerConfig {
   fetchConcurrency: number;
   /** 单个模块最多拉取的外部引用文档数 */
   externalRefLimit: number;
+  /** 允许加载外部引用的额外 origin */
+  externalRefOrigins?: Set<string>;
 }
 
 export interface SearchParams {

@@ -94,6 +94,30 @@ function parseExternalRefLimit(rawValue: string | undefined): number {
   return parsed;
 }
 
+function parseExternalRefOrigins(
+  rawValue: string | undefined
+): Set<string> | undefined {
+  if (!rawValue) {
+    return undefined;
+  }
+
+  const origins = rawValue
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map((value) => {
+      const url = new URL(value);
+      if (url.protocol !== "http:" && url.protocol !== "https:") {
+        throw new Error(
+          "SWAGGER_EXTERNAL_REF_ORIGINS only accepts HTTP(S) origins"
+        );
+      }
+      return url.origin;
+    });
+
+  return origins.length > 0 ? new Set(origins) : undefined;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): SwaggerServerConfig {
   const swaggerResourcesUrl = env.SWAGGER_RESOURCES_URL?.trim();
   if (!swaggerResourcesUrl) {
@@ -110,5 +134,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): SwaggerServerC
     requestTimeoutMs: parseRequestTimeout(env.SWAGGER_REQUEST_TIMEOUT_MS),
     fetchConcurrency: parseFetchConcurrency(env.SWAGGER_FETCH_CONCURRENCY),
     externalRefLimit: parseExternalRefLimit(env.SWAGGER_EXTERNAL_REF_LIMIT),
+    externalRefOrigins: parseExternalRefOrigins(
+      env.SWAGGER_EXTERNAL_REF_ORIGINS
+    ),
   };
 }

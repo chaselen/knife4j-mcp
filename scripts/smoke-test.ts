@@ -17,9 +17,11 @@ interface ListSpecsResult {
   totalOperations: number;
   modules: SpecSummary[];
   errors: string[];
+  stale: boolean;
 }
 
 interface FindApiResultItem {
+  kind: "path" | "webhook";
   module: string;
   method: string;
   path: string;
@@ -27,6 +29,10 @@ interface FindApiResultItem {
 
 interface FindApiResult {
   total: number;
+  returned: number;
+  offset: number;
+  limit: number;
+  hasMore: boolean;
   results: FindApiResultItem[];
 }
 
@@ -90,6 +96,18 @@ async function main(): Promise<void> {
 
   console.log("tools/list");
   console.log(JSON.stringify(tools.tools.map((tool) => tool.name)));
+  const expectedTools = [
+    "list_specs",
+    "find_api",
+    "get_api_detail",
+    "refresh_specs",
+  ];
+  if (
+    JSON.stringify(tools.tools.map((tool) => tool.name)) !==
+    JSON.stringify(expectedTools)
+  ) {
+    throw new Error("tools/list did not return the expected tool set");
+  }
 
   const listSpecs = await client.request(
     {
@@ -145,6 +163,14 @@ async function main(): Promise<void> {
     throw new Error(
       `Smoke test could not find any API in module=${selectedModule.module}`
     );
+  }
+  if (
+    findApiPayload.total < findApiPayload.returned ||
+    findApiPayload.returned !== findApiPayload.results.length ||
+    findApiPayload.offset !== 0 ||
+    findApiPayload.limit !== 1
+  ) {
+    throw new Error("find_api returned inconsistent pagination metadata");
   }
 
   console.log("selected_api");

@@ -162,6 +162,10 @@ claude mcp add knife4j-swagger \
   - 单个模块最多自动加载的外部 `$ref` JSON 文档数。
   - 默认值是 `32`，允许设置为 `0` 到 `200`；设置为 `0` 可关闭外部引用加载。
   - 外部文档使用与主 spec 相同的 Basic Auth、自定义 Header 和请求超时配置。
+- `SWAGGER_EXTERNAL_REF_ORIGINS`
+  - 允许加载跨 origin 外部 `$ref` 的白名单，使用逗号分隔，例如：`https://schemas.example.com,http://localhost:8080`。
+  - 默认只允许与当前模块 spec 同 origin 的外部引用，避免把认证 Header 转发到未授权地址。
+  - 白名单按 origin 匹配，配置中的路径会被忽略；只支持 HTTP 和 HTTPS。
 - `LOG_LEVEL`
   - 日志级别。
   - 当前设为 `debug` 时会输出更多拉取和解析过程日志，便于排查文档地址、认证或 JSON 格式问题。
@@ -210,6 +214,23 @@ npx -y @chaselen/knife4j-mcp
 - 聚合入口刷新失败时继续提供上一次成功的完整索引，并标记整体与模块状态为 `stale`
 - 模块 spec 使用可配置的并发上限拉取，避免刷新时瞬间压高网关连接数
 - 无效 spec 和重复模块名会被隔离并显示为失败状态
+
+## 兼容性边界
+
+- 支持 Swagger 2.x、OpenAPI 3.0 和常用 OpenAPI 3.1 JSON Schema 字段。
+- 本地 JSON Pointer 与 HTTP(S) JSON 外部 `$ref` 可以递归展开；不解析 YAML、`file:` 或其他协议。
+- 循环引用会保留为带 `ref` / `refName` 的节点，避免无限递归。
+- `callbacks`、`links`、`securitySchemes` 等复杂扩展会保留结构化原始定义；请求和响应的主要 Schema 会进一步展开。
+
+## 开发与验证
+
+```bash
+npm install
+npm test
+npm pack --dry-run
+```
+
+- `npm test` 会构建项目并运行 parser、registry、HTTP 配置和 MCP 内存传输集成测试。
 
 ## 最小可运行示例
 
