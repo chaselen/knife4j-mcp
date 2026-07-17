@@ -44,6 +44,20 @@ function requireStructuredContent<T>(value: unknown, toolName: string): T {
   return value as T;
 }
 
+function containsKey(value: unknown, targetKey: string): boolean {
+  if (Array.isArray(value)) {
+    return value.some((item) => containsKey(item, targetKey));
+  }
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  return Object.entries(value).some(
+    ([key, nestedValue]) =>
+      key === targetKey || containsKey(nestedValue, targetKey)
+  );
+}
+
 async function main(): Promise<void> {
   const env = Object.fromEntries(
     Object.entries(process.env).filter(
@@ -75,7 +89,7 @@ async function main(): Promise<void> {
   );
 
   console.log("tools/list");
-  console.log(JSON.stringify(tools, null, 2));
+  console.log(JSON.stringify(tools.tools.map((tool) => tool.name)));
 
   const listSpecs = await client.request(
     {
@@ -88,7 +102,6 @@ async function main(): Promise<void> {
     CallToolResultSchema
   );
   console.log("list_specs");
-  console.log(JSON.stringify(listSpecs.structuredContent, null, 2));
 
   const listSpecsPayload = requireStructuredContent<ListSpecsResult>(
     listSpecs.structuredContent,
@@ -105,7 +118,7 @@ async function main(): Promise<void> {
   }
 
   console.log("selected_module");
-  console.log(JSON.stringify(selectedModule, null, 2));
+  console.log(JSON.stringify(selectedModule));
 
   const findApi = await client.request(
     {
@@ -121,7 +134,6 @@ async function main(): Promise<void> {
     CallToolResultSchema
   );
   console.log("find_api");
-  console.log(JSON.stringify(findApi.structuredContent, null, 2));
 
   const findApiPayload = requireStructuredContent<FindApiResult>(
     findApi.structuredContent,
@@ -136,7 +148,7 @@ async function main(): Promise<void> {
   }
 
   console.log("selected_api");
-  console.log(JSON.stringify(selectedApi, null, 2));
+  console.log(JSON.stringify(selectedApi));
 
   const getApiDetail = await client.request(
     {
@@ -153,7 +165,6 @@ async function main(): Promise<void> {
     CallToolResultSchema
   );
   console.log("get_api_detail");
-  console.log(JSON.stringify(getApiDetail.structuredContent, null, 2));
 
   const getApiDetailPayload = requireStructuredContent<GetApiDetailResult>(
     getApiDetail.structuredContent,
@@ -167,38 +178,149 @@ async function main(): Promise<void> {
     );
   }
 
-  const prefixedFindApi = await client.request(
+  const compactApiDetail = await client.request(
+    {
+      method: "tools/call",
+      params: {
+        name: "get_api_detail",
+        arguments: {
+          module: selectedApi.module,
+          path: selectedApi.path,
+          method: selectedApi.method,
+          includeRaw: false,
+        },
+      },
+    },
+    CallToolResultSchema
+  );
+  const compactApiDetailPayload = requireStructuredContent<GetApiDetailResult>(
+    compactApiDetail.structuredContent,
+    "get_api_detail(compact)"
+  );
+  if (
+    !compactApiDetailPayload.found ||
+    containsKey(compactApiDetailPayload.detail, "raw") ||
+    containsKey(compactApiDetailPayload.detail, "rawOperation")
+  ) {
+    throw new Error("Compact API detail contains raw fields or was not found");
+  }
+
+  const exactFindApi = await client.request(
     {
       method: "tools/call",
       params: {
         name: "find_api",
         arguments: {
-          path: "/gateway/mobile-app/records/items/by-key",
+          module: selectedApi.module,
+          path: selectedApi.path,
+          method: selectedApi.method,
           limit: 3,
         },
       },
     },
     CallToolResultSchema
   );
-  console.log("find_api_prefixed_path");
-  console.log(JSON.stringify(prefixedFindApi.structuredContent, null, 2));
-
-  const prefixedFindApiPayload = requireStructuredContent<FindApiResult>(
-    prefixedFindApi.structuredContent,
-    "find_api(prefixed path)"
+  const exactFindApiPayload = requireStructuredContent<FindApiResult>(
+    exactFindApi.structuredContent,
+    "find_api(exact)"
   );
-  const prefixedApi = prefixedFindApiPayload.results.find(
-    (item) =>
-      item.module === "mobile-app" &&
-      item.path === "/records/items/by-key" &&
-      item.method === "get"
-  );
-
-  if (!prefixedApi) {
-    throw new Error(
-      "Smoke test could not resolve prefixed route /gateway/mobile-app/records/items/by-key"
-    );
+  if (
+    !exactFindApiPayload.results.some(
+      (item) =>
+        item.module === selectedApi.module &&
+        item.path === selectedApi.path &&
+        item.method === selectedApi.method
+    )
+  ) {
+    throw new Error("Exact API search did not return the selected API");
   }
+
+  const missingApiDetail = await client.request(
+    {
+      method: "tools/call",
+      params: {
+        name: "get_api_detail",
+        arguments: {
+          module: selectedApi.module,
+          path: "/__knife4j_mcp_missing_api__",
+          method: "get",
+        },
+      },
+    },
+    CallToolResultSchema
+  );
+  const missingApiDetailPayload = requireStructuredContent<GetApiDetailResult>(
+    missingApiDetail.structuredContent,
+    "get_api_detail(missing)"
+  );
+  if (missingApiDetailPayload.found || missingApiDetailPayload.detail !== null) {
+    throw new Error("Missing API lookup unexpectedly returned a result");
+  }
+
+  if (listSpecsPayload.modules.some((module) => module.module === "mobile-app")) {
+    const prefixedFindApi = await client.request(
+      {
+        method: "tools/call",
+        params: {
+          name: "find_api",
+          arguments: {
+            path: "/gateway/mobile-app/records/items/by-key",
+            limit: 3,
+          },
+        },
+      },
+      CallToolResultSchema
+    );
+    console.log("find_api_prefixed_path");
+
+    const prefixedFindApiPayload = requireStructuredContent<FindApiResult>(
+      prefixedFindApi.structuredContent,
+      "find_api(prefixed path)"
+    );
+    const prefixedApi = prefixedFindApiPayload.results.find(
+      (item) =>
+        item.module === "mobile-app" &&
+        item.path === "/records/items/by-key" &&
+        item.method === "get"
+    );
+
+    if (!prefixedApi) {
+      throw new Error(
+        "Smoke test could not resolve prefixed route /gateway/mobile-app/records/items/by-key"
+      );
+    }
+  }
+
+  const refreshSpecs = await client.request(
+    {
+      method: "tools/call",
+      params: { name: "refresh_specs", arguments: {} },
+    },
+    CallToolResultSchema
+  );
+  const refreshSpecsPayload = requireStructuredContent<ListSpecsResult>(
+    refreshSpecs.structuredContent,
+    "refresh_specs"
+  );
+  if (
+    refreshSpecsPayload.loadedModules === 0 ||
+    refreshSpecsPayload.totalOperations === 0
+  ) {
+    throw new Error("Refresh did not retain any loaded API operations");
+  }
+
+  console.log("smoke_summary");
+  console.log(
+    JSON.stringify({
+      loadedModules: refreshSpecsPayload.loadedModules,
+      failedModules: refreshSpecsPayload.failedModules,
+      totalOperations: refreshSpecsPayload.totalOperations,
+      compactDetail: "passed",
+      exactSearch: "passed",
+      missingLookup: "passed",
+      refreshSpecs: "passed",
+    })
+  );
 
   await transport.close();
 }

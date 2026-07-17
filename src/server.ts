@@ -111,11 +111,12 @@ export function createServer(registry: SwaggerRegistry): McpServer {
     {
       title: "Get API Detail",
       description:
-        "Preferred tool for full API documentation. Use module + exact path + HTTP method to read the server-indexed API detail, including recursively expanded request and response schemas. Do not fetch /v2/api-docs, /v3/api-docs, or spec URLs directly.",
+        "Preferred tool for API documentation. Use module + exact path + HTTP method to read recursively expanded request and response schemas. Set includeRaw=false for a compact, agent-friendly response; omit it for the backward-compatible full response. Do not fetch spec URLs directly.",
       inputSchema: {
         module: z.string(),
         path: z.string(),
         method: z.string(),
+        includeRaw: z.boolean().optional(),
       },
       outputSchema: {
         found: z.boolean(),
@@ -123,9 +124,9 @@ export function createServer(registry: SwaggerRegistry): McpServer {
         error: z.string().optional(),
       },
     },
-    async ({ module, path, method }) => {
+    async ({ module, path, method, includeRaw }) => {
       await registry.ensureLoaded();
-      const detail = registry.getApiDetail(module, path, method);
+      const detail = registry.getApiDetail(module, path, method, { includeRaw });
       const payload = detail
         ? { found: true, detail }
         : {

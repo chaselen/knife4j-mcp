@@ -175,6 +175,8 @@ npx -y @chaselen/knife4j-mcp
 - `list_specs`：列出模块、spec 地址、加载状态和接口数量
 - `find_api`：按关键词、path、tag、module、method 搜索接口
 - `get_api_detail`：获取单个接口的完整详情，并递归展开请求/响应 schema
+  - 默认保持完整兼容输出
+  - 传入 `includeRaw: false` 可省略递归结果中的 `raw` 和顶层 `rawOperation`，减少 Agent 上下文占用
 - `refresh_specs`：强制刷新 `swagger-resources` 和所有模块 spec
 
 ## 功能
@@ -183,6 +185,7 @@ npx -y @chaselen/knife4j-mcp
 - 支持 Basic Auth 和自定义 Header
 - 支持 Swagger 2.0，并尽量兼容 OpenAPI 3
 - 支持按路径、关键词、tag、method 等条件搜索接口
+- 在刷新阶段预计算路径别名和全文搜索文本，减少查询时的重复解析
 - 支持通过 `get_api_detail` 获取完整接口详情，并递归展开请求/响应 schema
 - 支持模块 allowlist、缓存 TTL 和手动刷新
 - 单个模块加载失败不会影响其他模块可用

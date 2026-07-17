@@ -318,6 +318,27 @@ function buildSearchText(entry: ApiIndexEntry, pathAliases: string[]): string {
     .toLowerCase();
 }
 
+interface SearchMetadata {
+  pathAliases: string[];
+  searchText: string;
+}
+
+function stripRawFields(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(stripRawFields);
+  }
+
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => key !== "raw")
+      .map(([key, nestedValue]) => [key, stripRawFields(nestedValue)])
+  );
+}
+
 /**
  * SwaggerRegistry 负责：
  * - 拉取 swagger-resources 与各模块 spec
@@ -332,6 +353,7 @@ export class SwaggerRegistry {
   private moduleStates = new Map<string, ModuleLoadState>();
   private lastErrors: string[] = [];
   private refreshPromise?: Promise<RefreshResult>;
+  private searchMetadata = new WeakMap<ApiIndexEntry, SearchMetadata>();
 
   constructor(config: SwaggerServerConfig = loadConfig()) {
     this.config = config;
@@ -410,80 +432,68 @@ export class SwaggerRegistry {
     const module = normalizeModuleForSearch(params.module);
     const method = normalizeForSearch(params.method);
 
-    const scored = this.apiEntries
-      .filter((entry) => {
-        const moduleSpec = this.moduleSpecs.get(entry.module);
-        const pathAliases = buildPathAliases(
-          entry,
-          moduleSpec ?? {
-            module: entry.module,
-            displayName: entry.module,
-            specUrl: entry.specUrl,
-            specType: "unknown",
-            rawSpec: {},
-            fetchedAt: "",
-          }
-        );
-        const searchText = buildSearchText(entry, pathAliases);
+    const scored: Array<{ entry: ApiIndexEntry; score: number }> = [];
 
-        if (module && normalizeModuleForSearch(entry.module) !== module) {
-          return false;
-        }
+    for (const entry of this.apiEntries) {
+      const metadata = this.getSearchMetadata(entry);
 
-        if (method && normalizeForSearch(entry.method) !== method) {
-          return false;
-        }
+      if (module && normalizeModuleForSearch(entry.module) !== module) {
+        continue;
+      }
 
-        if (
-          path &&
-          !this.matchesPathNeedles(pathAliases, pathNeedles.length > 0 ? pathNeedles : [path])
-        ) {
-          return false;
-        }
+      if (method && normalizeForSearch(entry.method) !== method) {
+        continue;
+      }
 
-        if (
-          tag &&
-          !entry.tags.some((entryTag) => includesNeedle(entryTag, tag))
-        ) {
-          return false;
-        }
+      if (
+        path &&
+        !this.matchesPathNeedles(
+          metadata.pathAliases,
+          pathNeedles.length > 0 ? pathNeedles : [path]
+        )
+      ) {
+        continue;
+      }
 
-        if (!query) {
-          return true;
-        }
+      if (tag && !entry.tags.some((entryTag) => includesNeedle(entryTag, tag))) {
+        continue;
+      }
 
-        // 先走一次宽松的全文匹配；如果没命中，但 query 本身像路径，
-        // 再退回到 alias-aware 的路径匹配。
-        if (searchText.includes(query)) {
-          return true;
-        }
+      // query 先走全文匹配，路径形式的输入再回退到 alias-aware 匹配
+      if (
+        query &&
+        !metadata.searchText.includes(query) &&
+        (queryPathNeedles.length === 0 ||
+          !this.matchesPathNeedles(metadata.pathAliases, queryPathNeedles))
+      ) {
+        continue;
+      }
 
-        return (
-          queryPathNeedles.length > 0 &&
-          this.matchesPathNeedles(pathAliases, queryPathNeedles)
-        );
-      })
-      .map((entry) => ({
+      scored.push({
         entry,
-        score: this.scoreEntry(entry, {
-          query,
-          path,
-          pathNeedles,
-          queryPathNeedles,
-          tag,
-        }),
-      }))
+        score: this.scoreEntry(
+          entry,
+          metadata,
+          { query, path, pathNeedles, queryPathNeedles, tag }
+        ),
+      });
+    }
+
+    return scored
       .sort((left, right) => right.score - left.score)
       .slice(0, limit)
       .map((item) => item.entry);
-
-    return scored;
   }
 
   /**
    * 按模块名 + 精确 path + method 获取单个接口详情。
    */
-  getApiDetail(moduleName: string, path: string, method: string): Record<string, unknown> | null {
+  getApiDetail(
+    moduleName: string,
+    path: string,
+    method: string,
+    options: { includeRaw?: boolean } = {}
+  ): Record<string, unknown> | null {
     const normalizedModule = normalizeModuleForSearch(moduleName);
     const normalizedPath = path.trim();
     const normalizedMethod = normalizeForSearch(method);
@@ -515,7 +525,8 @@ export class SwaggerRegistry {
       ? resolveResponses(entry.responses, moduleSpec.rawSpec)
       : {};
 
-    return {
+    const includeRaw = options.includeRaw ?? true;
+    const detail = {
       module: entry.module,
       method: entry.method,
       path: entry.path,
@@ -525,15 +536,23 @@ export class SwaggerRegistry {
       consumes: entry.consumes ?? [],
       produces: entry.produces ?? [],
       parameters: entry.parameters,
-      resolvedParameters,
+      resolvedParameters: includeRaw
+        ? resolvedParameters
+        : stripRawFields(resolvedParameters),
       requestBody: entry.requestBody ?? null,
-      resolvedRequestBody,
+      resolvedRequestBody: includeRaw
+        ? resolvedRequestBody
+        : stripRawFields(resolvedRequestBody),
       responses: entry.responses ?? {},
-      resolvedResponses,
-      relatedRefs,
-      rawOperation: entry.operation,
+      resolvedResponses: includeRaw
+        ? resolvedResponses
+        : stripRawFields(resolvedResponses),
+      relatedRefs: includeRaw ? relatedRefs : stripRawFields(relatedRefs),
+      ...(includeRaw ? { rawOperation: entry.operation } : {}),
       specUrl: entry.specUrl,
     };
+
+    return detail;
   }
 
   getStatus(): RefreshResult {
@@ -663,6 +682,7 @@ export class SwaggerRegistry {
 
     this.apiEntries = apiEntries;
     this.moduleSpecs = moduleSpecs;
+    this.rebuildSearchMetadata();
     this.moduleStates = moduleStates;
     this.lastErrors = uniqueStringList(errors);
     this.lastRefreshAt = Date.now();
@@ -725,6 +745,7 @@ export class SwaggerRegistry {
    */
   private scoreEntry(
     entry: ApiIndexEntry,
+    metadata: SearchMetadata,
     params: {
       query: string;
       path: string;
@@ -734,18 +755,7 @@ export class SwaggerRegistry {
     }
   ): number {
     let score = 0;
-    const moduleSpec = this.moduleSpecs.get(entry.module);
-    const pathAliases = buildPathAliases(
-      entry,
-      moduleSpec ?? {
-        module: entry.module,
-        displayName: entry.module,
-        specUrl: entry.specUrl,
-        specType: "unknown",
-        rawSpec: {},
-        fetchedAt: "",
-      }
-    );
+    const { pathAliases, searchText } = metadata;
 
     // 排序规则尽量保持简单：path 直接命中权重最高，其次是 tag / query 命中。
     if (params.path) {
@@ -766,8 +776,6 @@ export class SwaggerRegistry {
     }
 
     if (params.query) {
-      const searchText = buildSearchText(entry, pathAliases);
-
       if (searchText.includes(params.query)) {
         score += 100;
       } else {
@@ -789,6 +797,36 @@ export class SwaggerRegistry {
     }
 
     return score;
+  }
+
+  private getSearchMetadata(entry: ApiIndexEntry): SearchMetadata {
+    const cached = this.searchMetadata.get(entry);
+    if (cached) {
+      return cached;
+    }
+
+    const moduleSpec = this.moduleSpecs.get(entry.module) ?? {
+      module: entry.module,
+      displayName: entry.module,
+      specUrl: entry.specUrl,
+      specType: "unknown" as const,
+      rawSpec: {},
+      fetchedAt: "",
+    };
+    const pathAliases = buildPathAliases(entry, moduleSpec);
+    const metadata = {
+      pathAliases,
+      searchText: buildSearchText(entry, pathAliases),
+    };
+    this.searchMetadata.set(entry, metadata);
+    return metadata;
+  }
+
+  private rebuildSearchMetadata(): void {
+    this.searchMetadata = new WeakMap<ApiIndexEntry, SearchMetadata>();
+    for (const entry of this.apiEntries) {
+      this.getSearchMetadata(entry);
+    }
   }
 
   /**

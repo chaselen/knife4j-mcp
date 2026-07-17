@@ -17,6 +17,20 @@ function jsonResponse(value: unknown, init?: ResponseInit): Response {
   });
 }
 
+function containsKey(value: unknown, targetKey: string): boolean {
+  if (Array.isArray(value)) {
+    return value.some((item) => containsKey(item, targetKey));
+  }
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  return Object.entries(value).some(
+    ([key, nestedValue]) =>
+      key === targetKey || containsKey(nestedValue, targetKey)
+  );
+}
+
 test("refresh retains the previous module index after a transient failure", async () => {
   const originalFetch = globalThis.fetch;
   let failSpec = false;
@@ -79,6 +93,55 @@ test("registry resolves module URLs against swaggerBaseUrl", async () => {
       "https://gateway.example/swagger-resources",
       "https://docs.example/api/specs/users.json",
     ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("API detail compact mode removes duplicated raw fields", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/swagger-resources")) {
+      return jsonResponse([{ name: "users", url: "/users.json" }]);
+    }
+    return jsonResponse({
+      openapi: "3.0.3",
+      paths: {
+        "/users": {
+          post: {
+            requestBody: {
+              content: {
+                "application/json": {
+                  schema: { $ref: "#/components/schemas/User" },
+                },
+              },
+            },
+            responses: { "200": { description: "OK" } },
+          },
+        },
+      },
+      components: {
+        schemas: {
+          User: { type: "object", properties: { id: { type: "string" } } },
+        },
+      },
+    });
+  };
+
+  try {
+    const registry = new SwaggerRegistry(config);
+    await registry.refresh();
+    const full = registry.getApiDetail("users", "/users", "post");
+    const compact = registry.getApiDetail("users", "/users", "post", {
+      includeRaw: false,
+    });
+
+    assert.equal(containsKey(full, "rawOperation"), true);
+    assert.equal(containsKey(full, "raw"), true);
+    assert.equal(containsKey(compact, "rawOperation"), false);
+    assert.equal(containsKey(compact, "raw"), false);
+    assert.deepEqual(compact?.requestBody, full?.requestBody);
   } finally {
     globalThis.fetch = originalFetch;
   }
