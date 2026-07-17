@@ -158,6 +158,10 @@ claude mcp add knife4j-swagger \
   - 同时拉取模块 spec 的最大请求数。
   - 默认值是 `8`，允许设置为 `1` 到 `100` 之间的整数。
   - 模块很多或上游网关有连接数限制时，可以适当调低。
+- `SWAGGER_EXTERNAL_REF_LIMIT`
+  - 单个模块最多自动加载的外部 `$ref` JSON 文档数。
+  - 默认值是 `32`，允许设置为 `0` 到 `200`；设置为 `0` 可关闭外部引用加载。
+  - 外部文档使用与主 spec 相同的 Basic Auth、自定义 Header 和请求超时配置。
 - `LOG_LEVEL`
   - 日志级别。
   - 当前设为 `debug` 时会输出更多拉取和解析过程日志，便于排查文档地址、认证或 JSON 格式问题。
@@ -191,6 +195,11 @@ npx -y @chaselen/knife4j-mcp
 - 支持按路径、关键词、tag、method 等条件搜索接口
 - 在刷新阶段预计算路径别名和全文搜索文本，减少查询时的重复解析
 - 支持通过 `get_api_detail` 获取完整接口详情，并递归展开请求/响应 schema
+- 详情会显式返回 `operationId`、弃用状态、认证要求、servers、externalDocs、callbacks 和 security schemes
+- 请求与响应详情支持 examples、encoding、响应 headers 与 links
+- Schema 展开支持 OpenAPI 3.1 nullable 类型、default、const、examples、读写属性、discriminator 和常用校验约束
+- 支持自动加载并打包跨文件 `$ref`，同时限制外部文档数量
+- OpenAPI 3.1 `webhooks` 会作为 `kind: "webhook"` 的接口参与搜索
 - 支持模块 allowlist、缓存 TTL 和手动刷新
 - 单个模块加载失败不会影响其他模块可用
 - 刷新发生临时失败时保留该模块上一次成功的索引，并在模块状态中标记 `stale`

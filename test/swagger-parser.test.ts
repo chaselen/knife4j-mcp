@@ -56,3 +56,58 @@ test("local refs decode JSON Pointer escape sequences", () => {
   assert.equal(parameter.schema?.kind, "object");
   assert.equal(parameter.schema?.properties?.id?.type, "string");
 });
+
+test("schema expansion preserves OpenAPI 3.1 metadata and constraints", () => {
+  const parameter = resolveParameter(
+    {
+      name: "code",
+      in: "query",
+      deprecated: true,
+      style: "form",
+      explode: false,
+      example: "ABC-1",
+      schema: {
+        type: ["string", "null"],
+        pattern: "^[A-Z]+-[0-9]+$",
+        minLength: 3,
+        default: "ABC-1",
+        readOnly: true,
+      },
+    },
+    {}
+  );
+
+  assert.equal(parameter.deprecated, true);
+  assert.equal(parameter.explode, false);
+  assert.equal(parameter.schema?.type, "string");
+  assert.equal(parameter.schema?.nullable, true);
+  assert.equal(parameter.schema?.defaultValue, "ABC-1");
+  assert.equal(parameter.schema?.readOnly, true);
+  assert.deepEqual(parameter.schema?.constraints, {
+    minLength: 3,
+    pattern: "^[A-Z]+-[0-9]+$",
+  });
+});
+
+test("OpenAPI webhooks are indexed as API entries", () => {
+  const moduleSpec: LoadedModuleSpec = {
+    module: "events",
+    displayName: "Events",
+    specUrl: "https://docs.example/events.json",
+    specType: "openapi3",
+    fetchedAt: new Date(0).toISOString(),
+    rawSpec: {
+      openapi: "3.1.0",
+      paths: {},
+      webhooks: {
+        orderChanged: {
+          post: { operationId: "orderChanged", responses: {} },
+        },
+      },
+    },
+  };
+
+  const [entry] = extractApiEntries(moduleSpec);
+  assert.equal(entry?.kind, "webhook");
+  assert.equal(entry?.path, "orderChanged");
+});

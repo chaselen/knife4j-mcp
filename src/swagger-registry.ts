@@ -1,6 +1,7 @@
 import { loadConfig } from "./config.js";
 import { fetchJson, resolveUrl } from "./http.js";
 import { logger } from "./logger.js";
+import { bundleExternalRefs } from "./swagger-bundler.js";
 import {
   collectExpandedRelatedRefs,
   detectSpecType,
@@ -329,6 +330,7 @@ function buildSearchText(entry: ApiIndexEntry, pathAliases: string[]): string {
     .join(" ");
 
   return [
+    entry.kind,
     entry.module,
     entry.method,
     entry.path,
@@ -571,13 +573,49 @@ export class SwaggerRegistry {
       : {};
 
     const includeRaw = options.includeRaw ?? true;
+    const rawSpec = moduleSpec?.rawSpec;
+    const pathItem: Record<string, unknown> | undefined =
+      rawSpec && isRecord(rawSpec.paths) && isRecord(rawSpec.paths[entry.path])
+        ? (rawSpec.paths[entry.path] as Record<string, unknown>)
+        : rawSpec &&
+            isRecord(rawSpec.webhooks) &&
+            isRecord(rawSpec.webhooks[entry.path])
+          ? (rawSpec.webhooks[entry.path] as Record<string, unknown>)
+          : undefined;
+    const components = rawSpec && isRecord(rawSpec.components)
+      ? rawSpec.components
+      : undefined;
+    const securitySchemes =
+      components && isRecord(components.securitySchemes)
+        ? components.securitySchemes
+        : rawSpec && isRecord(rawSpec.securityDefinitions)
+          ? rawSpec.securityDefinitions
+          : {};
+    const security =
+      entry.operation.security !== undefined
+        ? entry.operation.security
+        : rawSpec?.security ?? [];
+    const servers =
+      entry.operation.servers !== undefined
+        ? entry.operation.servers
+        : pathItem?.servers !== undefined
+          ? pathItem.servers
+          : rawSpec?.servers ?? [];
     const detail = {
+      kind: entry.kind,
       module: entry.module,
       method: entry.method,
       path: entry.path,
+      operationId: entry.operationId,
       summary: entry.summary,
       description: entry.description,
       tags: entry.tags,
+      deprecated: entry.operation.deprecated === true,
+      security,
+      securitySchemes,
+      servers,
+      externalDocs: entry.operation.externalDocs ?? rawSpec?.externalDocs ?? null,
+      callbacks: entry.operation.callbacks ?? {},
       consumes: entry.consumes ?? [],
       produces: entry.produces ?? [],
       parameters: entry.parameters,
@@ -690,10 +728,15 @@ export class SwaggerRegistry {
         );
 
         try {
-          const rawSpec = await fetchJson<unknown>(specUrl, this.config);
-          if (!isRecord(rawSpec)) {
+          const fetchedSpec = await fetchJson<unknown>(specUrl, this.config);
+          if (!isRecord(fetchedSpec)) {
             throw new Error(`Spec ${specUrl} must be a JSON object`);
           }
+          const rawSpec = await bundleExternalRefs(
+            fetchedSpec,
+            specUrl,
+            this.config
+          );
           const detectedType = detectSpecType(rawSpec);
           if (detectedType === "unknown") {
             throw new Error(`Spec ${specUrl} is not Swagger 2.x or OpenAPI 3.x`);

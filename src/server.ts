@@ -31,6 +31,7 @@ export function createServer(registry: SwaggerRegistry): McpServer {
         totalOperations: z.number(),
         modules: z.array(
           z.object({
+            kind: z.enum(["path", "webhook"]),
             module: z.string(),
             displayName: z.string(),
             specUrl: z.string(),
@@ -87,6 +88,7 @@ export function createServer(registry: SwaggerRegistry): McpServer {
     async (args) => {
       await registry.ensureLoaded();
       const results = registry.findApi(args).map((item) => ({
+        kind: item.kind,
         module: item.module,
         method: item.method,
         path: item.path,

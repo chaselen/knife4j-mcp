@@ -15,6 +15,7 @@ test("loadConfig provides a request timeout and accepts an override", () => {
   assert.equal(defaults.requestTimeoutMs, 15_000);
   assert.equal(overridden.requestTimeoutMs, 2_500);
   assert.equal(defaults.fetchConcurrency, 8);
+  assert.equal(defaults.externalRefLimit, 32);
 });
 
 test("loadConfig validates module fetch concurrency", () => {
@@ -31,6 +32,23 @@ test("loadConfig validates module fetch concurrency", () => {
         SWAGGER_FETCH_CONCURRENCY: "0",
       }),
     /between 1 and 100/
+  );
+});
+
+test("loadConfig validates the external reference limit", () => {
+  const disabled = loadConfig({
+    SWAGGER_RESOURCES_URL: "https://gateway.example/swagger-resources",
+    SWAGGER_EXTERNAL_REF_LIMIT: "0",
+  });
+
+  assert.equal(disabled.externalRefLimit, 0);
+  assert.throws(
+    () =>
+      loadConfig({
+        SWAGGER_RESOURCES_URL: "https://gateway.example/swagger-resources",
+        SWAGGER_EXTERNAL_REF_LIMIT: "201",
+      }),
+    /between 0 and 200/
   );
 });
 

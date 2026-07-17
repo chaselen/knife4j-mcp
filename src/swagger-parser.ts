@@ -30,6 +30,24 @@ function toStringArray(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === "string");
 }
 
+function contentMediaTypes(value: unknown): string[] {
+  return isRecord(value) && isRecord(value.content)
+    ? Object.keys(value.content)
+    : [];
+}
+
+function responseMediaTypes(value: unknown): string[] {
+  if (!isRecord(value)) {
+    return [];
+  }
+
+  return [
+    ...new Set(
+      Object.values(value).flatMap((response) => contentMediaTypes(response))
+    ),
+  ];
+}
+
 function parameterKey(
   parameter: unknown,
   rawSpec: Record<string, unknown>
@@ -100,75 +118,92 @@ export function detectSpecType(
 }
 
 export function extractApiEntries(moduleSpec: LoadedModuleSpec): ApiIndexEntry[] {
-  const paths = moduleSpec.rawSpec.paths;
-  if (!isRecord(paths)) {
-    return [];
-  }
-
   const globalConsumes = toStringArray(moduleSpec.rawSpec.consumes);
   const globalProduces = toStringArray(moduleSpec.rawSpec.produces);
   const entries: ApiIndexEntry[] = [];
+  const collections: Array<{
+    kind: ApiIndexEntry["kind"];
+    items: Record<string, unknown>;
+  }> = [];
 
-  for (const [path, pathItemValue] of Object.entries(paths)) {
-    if (!isRecord(pathItemValue)) {
-      continue;
-    }
+  if (isRecord(moduleSpec.rawSpec.paths)) {
+    collections.push({ kind: "path", items: moduleSpec.rawSpec.paths });
+  }
+  if (isRecord(moduleSpec.rawSpec.webhooks)) {
+    collections.push({ kind: "webhook", items: moduleSpec.rawSpec.webhooks });
+  }
 
-    const pathParameters = Array.isArray(pathItemValue.parameters)
-      ? pathItemValue.parameters
-      : [];
-    const pathConsumes = toStringArray(pathItemValue.consumes);
-    const pathProduces = toStringArray(pathItemValue.produces);
-
-    for (const method of METHODS) {
-      const operationValue = pathItemValue[method];
-      if (!isRecord(operationValue)) {
+  for (const collection of collections) {
+    for (const [path, originalPathItem] of Object.entries(collection.items)) {
+      const pathItemValue =
+        isRecord(originalPathItem) && typeof originalPathItem.$ref === "string"
+          ? resolveRefRaw(moduleSpec.rawSpec, originalPathItem.$ref)?.raw
+          : originalPathItem;
+      if (!isRecord(pathItemValue)) {
         continue;
       }
 
-      const operationParameters = Array.isArray(operationValue.parameters)
-        ? operationValue.parameters
+      const pathParameters = Array.isArray(pathItemValue.parameters)
+        ? pathItemValue.parameters
         : [];
+      const pathConsumes = toStringArray(pathItemValue.consumes);
+      const pathProduces = toStringArray(pathItemValue.produces);
 
-      entries.push({
-        module: moduleSpec.module,
-        method,
-        path,
-        summary:
-          typeof operationValue.summary === "string"
-            ? operationValue.summary
-            : undefined,
-        description:
-          typeof operationValue.description === "string"
-            ? operationValue.description
-            : undefined,
-        operationId:
-          typeof operationValue.operationId === "string"
-            ? operationValue.operationId
-            : undefined,
-        tags: toStringArray(operationValue.tags),
-        specUrl: moduleSpec.specUrl,
-        consumes:
-          toStringArray(operationValue.consumes).length > 0
-            ? toStringArray(operationValue.consumes)
-            : pathConsumes.length > 0
-              ? pathConsumes
-              : globalConsumes,
-        produces:
-          toStringArray(operationValue.produces).length > 0
-            ? toStringArray(operationValue.produces)
-            : pathProduces.length > 0
-              ? pathProduces
-              : globalProduces,
-        parameters: mergeParameters(
-          pathParameters,
-          operationParameters,
-          moduleSpec.rawSpec
-        ),
-        requestBody: operationValue.requestBody,
-        responses: operationValue.responses,
-        operation: operationValue,
-      });
+      for (const method of METHODS) {
+        const operationValue = pathItemValue[method];
+        if (!isRecord(operationValue)) {
+          continue;
+        }
+
+        const operationParameters = Array.isArray(operationValue.parameters)
+          ? operationValue.parameters
+          : [];
+
+        entries.push({
+          kind: collection.kind,
+          module: moduleSpec.module,
+          method,
+          path,
+          summary:
+            typeof operationValue.summary === "string"
+              ? operationValue.summary
+              : undefined,
+          description:
+            typeof operationValue.description === "string"
+              ? operationValue.description
+              : undefined,
+          operationId:
+            typeof operationValue.operationId === "string"
+              ? operationValue.operationId
+              : undefined,
+          tags: toStringArray(operationValue.tags),
+          specUrl: moduleSpec.specUrl,
+          consumes:
+            toStringArray(operationValue.consumes).length > 0
+              ? toStringArray(operationValue.consumes)
+              : contentMediaTypes(operationValue.requestBody).length > 0
+                ? contentMediaTypes(operationValue.requestBody)
+                : pathConsumes.length > 0
+                  ? pathConsumes
+                  : globalConsumes,
+          produces:
+            toStringArray(operationValue.produces).length > 0
+              ? toStringArray(operationValue.produces)
+              : responseMediaTypes(operationValue.responses).length > 0
+                ? responseMediaTypes(operationValue.responses)
+                : pathProduces.length > 0
+                  ? pathProduces
+                  : globalProduces,
+          parameters: mergeParameters(
+            pathParameters,
+            operationParameters,
+            moduleSpec.rawSpec
+          ),
+          requestBody: operationValue.requestBody,
+          responses: operationValue.responses,
+          operation: operationValue,
+        });
+      }
     }
   }
 
@@ -254,12 +289,21 @@ function resolveRefRaw(
     current = current[token];
   }
 
+  const knownGroups = new Set([
+    "definitions",
+    "schemas",
+    "parameters",
+    "responses",
+    "requestBodies",
+  ]);
   const group =
-    tokens[0] === "components" ? (tokens[1] ?? "") : (tokens[0] ?? "");
+    tokens[0] === "components"
+      ? (tokens[1] ?? "")
+      : tokens.find((token) => knownGroups.has(token)) ?? (tokens[0] ?? "");
   const name = tokens[tokens.length - 1] ?? ref;
 
   const kind: RefSummary["kind"] =
-    group === "definitions" || group === "schemas" || group === "components"
+    group === "definitions" || group === "schemas"
       ? "schema"
       : group === "parameters"
         ? "parameter"
@@ -437,6 +481,61 @@ function mergeObjectNodes(nodes: ExpandedSchemaNode[]): ExpandedSchemaNode {
   };
 }
 
+const SCHEMA_CONSTRAINT_KEYS = [
+  "multipleOf",
+  "minimum",
+  "maximum",
+  "exclusiveMinimum",
+  "exclusiveMaximum",
+  "minLength",
+  "maxLength",
+  "pattern",
+  "minItems",
+  "maxItems",
+  "uniqueItems",
+  "minProperties",
+  "maxProperties",
+] as const;
+
+function schemaMetadata(
+  schema: Record<string, unknown>
+): Pick<
+  ExpandedSchemaNode,
+  | "constValue"
+  | "defaultValue"
+  | "example"
+  | "examples"
+  | "deprecated"
+  | "readOnly"
+  | "writeOnly"
+  | "discriminator"
+  | "constraints"
+> {
+  const constraints = Object.fromEntries(
+    SCHEMA_CONSTRAINT_KEYS.filter((key) => schema[key] !== undefined).map(
+      (key) => [key, schema[key]]
+    )
+  );
+
+  return {
+    ...(schema.const !== undefined ? { constValue: schema.const } : {}),
+    ...(schema.default !== undefined ? { defaultValue: schema.default } : {}),
+    ...(schema.example !== undefined ? { example: schema.example } : {}),
+    ...(Array.isArray(schema.examples) ? { examples: schema.examples } : {}),
+    ...(typeof schema.deprecated === "boolean"
+      ? { deprecated: schema.deprecated }
+      : {}),
+    ...(typeof schema.readOnly === "boolean" ? { readOnly: schema.readOnly } : {}),
+    ...(typeof schema.writeOnly === "boolean"
+      ? { writeOnly: schema.writeOnly }
+      : {}),
+    ...(schema.discriminator !== undefined
+      ? { discriminator: schema.discriminator }
+      : {}),
+    ...(Object.keys(constraints).length > 0 ? { constraints } : {}),
+  };
+}
+
 function resolveSchemaNode(
   spec: Record<string, unknown>,
   schema: unknown,
@@ -459,6 +558,7 @@ function resolveSchemaNode(
     schema.nullable === true ||
     (Array.isArray(schema.type) && schema.type.includes("null"));
   const format = typeof schema.format === "string" ? schema.format : undefined;
+  const metadata = schemaMetadata(schema);
 
   if (typeof schema.$ref === "string") {
     const ref = schema.$ref;
@@ -471,6 +571,7 @@ function resolveSchemaNode(
         description,
         nullable: nullable || undefined,
         raw: schema,
+        ...metadata,
       };
     }
 
@@ -482,6 +583,7 @@ function resolveSchemaNode(
         description: description ?? (typeof resolved.raw === "object" ? undefined : undefined),
         nullable: nullable || undefined,
         raw: resolved.raw,
+        ...metadata,
       };
     }
 
@@ -493,6 +595,7 @@ function resolveSchemaNode(
       description: expanded.description ?? description,
       nullable: expanded.nullable ?? (nullable || undefined),
       raw: expanded.raw ?? resolved.raw,
+      ...metadata,
     };
   }
 
@@ -508,6 +611,7 @@ function resolveSchemaNode(
         description: merged.description ?? description,
         nullable: merged.nullable ?? (nullable || undefined),
         raw: schema,
+        ...metadata,
       };
     }
 
@@ -517,6 +621,7 @@ function resolveSchemaNode(
       nullable: nullable || undefined,
       variants,
       raw: schema,
+      ...metadata,
     };
   }
 
@@ -532,6 +637,7 @@ function resolveSchemaNode(
       nullable: nullable || undefined,
       variants: source.map((item) => resolveSchemaNode(spec, item, stack)),
       raw: schema,
+      ...metadata,
     };
   }
 
@@ -544,10 +650,18 @@ function resolveSchemaNode(
       nullable: nullable || undefined,
       enumValues: [...schema.enum],
       raw: schema,
+      ...metadata,
     };
   }
 
-  const typeValue = typeof schema.type === "string" ? schema.type : undefined;
+  const typeValue =
+    typeof schema.type === "string"
+      ? schema.type
+      : Array.isArray(schema.type)
+        ? schema.type.find(
+            (item): item is string => typeof item === "string" && item !== "null"
+          )
+        : undefined;
   if (typeValue === "array" || "items" in schema) {
     return {
       kind: "array",
@@ -557,6 +671,7 @@ function resolveSchemaNode(
       nullable: nullable || undefined,
       items: resolveSchemaNode(spec, schema.items, stack),
       raw: schema,
+      ...metadata,
     };
   }
 
@@ -597,6 +712,7 @@ function resolveSchemaNode(
       properties,
       additionalProperties,
       raw: schema,
+      ...metadata,
     };
   }
 
@@ -608,6 +724,7 @@ function resolveSchemaNode(
       description,
       nullable: nullable || undefined,
       raw: schema,
+      ...metadata,
     };
   }
 
@@ -616,6 +733,7 @@ function resolveSchemaNode(
     description,
     nullable: nullable || undefined,
     raw: schema,
+    ...metadata,
   };
 }
 
@@ -652,8 +770,46 @@ export function resolveParameter(
       typeof resolvedParameter.description === "string"
         ? resolvedParameter.description
         : undefined,
+    deprecated:
+      typeof resolvedParameter.deprecated === "boolean"
+        ? resolvedParameter.deprecated
+        : undefined,
+    style:
+      typeof resolvedParameter.style === "string"
+        ? resolvedParameter.style
+        : undefined,
+    explode:
+      typeof resolvedParameter.explode === "boolean"
+        ? resolvedParameter.explode
+        : undefined,
+    allowEmptyValue:
+      typeof resolvedParameter.allowEmptyValue === "boolean"
+        ? resolvedParameter.allowEmptyValue
+        : undefined,
+    example: resolvedParameter.example,
+    examples: resolvedParameter.examples,
     schema,
     raw: resolvedParameter,
+  };
+}
+
+function resolveMediaType(
+  mediaValue: unknown,
+  rawSpec: Record<string, unknown>
+): Record<string, unknown> {
+  if (!isRecord(mediaValue)) {
+    return { schema: null, raw: mediaValue };
+  }
+
+  return {
+    schema:
+      mediaValue.schema !== undefined
+        ? resolveSchemaNode(rawSpec, mediaValue.schema)
+        : null,
+    example: mediaValue.example,
+    examples: mediaValue.examples,
+    encoding: mediaValue.encoding,
+    raw: mediaValue,
   };
 }
 
@@ -677,14 +833,7 @@ export function resolveRequestBody(
   if (isRecord(resolvedRequestBody.content)) {
     const content = Object.fromEntries(
       Object.entries(resolvedRequestBody.content).map(([mediaType, mediaValue]) => {
-        const schema = isRecord(mediaValue) ? mediaValue.schema : undefined;
-        return [
-          mediaType,
-          {
-            schema: schema ? resolveSchemaNode(rawSpec, schema) : null,
-            raw: mediaValue,
-          },
-        ];
+        return [mediaType, resolveMediaType(mediaValue, rawSpec)];
       })
     );
 
@@ -738,16 +887,18 @@ export function resolveResponses(
       if (isRecord(resolvedResponse.content)) {
         const content = Object.fromEntries(
           Object.entries(resolvedResponse.content).map(([mediaType, mediaValue]) => {
-            const schema = isRecord(mediaValue) ? mediaValue.schema : undefined;
-            return [
-              mediaType,
-              {
-                schema: schema ? resolveSchemaNode(rawSpec, schema) : null,
-                raw: mediaValue,
-              },
-            ];
+            return [mediaType, resolveMediaType(mediaValue, rawSpec)];
           })
         );
+
+        const headers = isRecord(resolvedResponse.headers)
+          ? Object.fromEntries(
+              Object.entries(resolvedResponse.headers).map(([name, header]) => [
+                name,
+                resolveParameter(header, rawSpec),
+              ])
+            )
+          : {};
 
         return [
           statusCode,
@@ -757,6 +908,10 @@ export function resolveResponses(
                 ? resolvedResponse.description
                 : undefined,
             content,
+            headers,
+            links: isRecord(resolvedResponse.links)
+              ? resolvedResponse.links
+              : {},
             raw: resolvedResponse,
           },
         ];
@@ -773,6 +928,15 @@ export function resolveResponses(
             resolvedResponse.schema !== undefined
               ? resolveSchemaNode(rawSpec, resolvedResponse.schema)
               : null,
+          headers: isRecord(resolvedResponse.headers)
+            ? Object.fromEntries(
+                Object.entries(resolvedResponse.headers).map(([name, header]) => [
+                  name,
+                  resolveParameter(header, rawSpec),
+                ])
+              )
+            : {},
+          examples: resolvedResponse.examples,
           raw: resolvedResponse,
         },
       ];

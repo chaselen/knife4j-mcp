@@ -25,6 +25,7 @@ export interface LoadedModuleSpec {
 }
 
 export interface ApiIndexEntry {
+  kind: "path" | "webhook";
   module: string;
   method: HttpMethod;
   path: string;
@@ -64,6 +65,8 @@ export interface SwaggerServerConfig {
   requestTimeoutMs: number;
   /** 同时拉取模块文档的最大请求数 */
   fetchConcurrency: number;
+  /** 单个模块最多拉取的外部引用文档数 */
+  externalRefLimit: number;
 }
 
 export interface SearchParams {
@@ -125,6 +128,15 @@ export interface ExpandedSchemaNode {
   description?: string;
   nullable?: boolean;
   enumValues?: unknown[];
+  constValue?: unknown;
+  defaultValue?: unknown;
+  example?: unknown;
+  examples?: unknown[];
+  deprecated?: boolean;
+  readOnly?: boolean;
+  writeOnly?: boolean;
+  discriminator?: unknown;
+  constraints?: Record<string, unknown>;
   required?: string[];
   ref?: string;
   refName?: string;
@@ -140,6 +152,12 @@ export interface ExpandedParameter {
   in?: string;
   required?: boolean;
   description?: string;
+  deprecated?: boolean;
+  style?: string;
+  explode?: boolean;
+  allowEmptyValue?: boolean;
+  example?: unknown;
+  examples?: unknown;
   schema: ExpandedSchemaNode | null;
   raw: unknown;
 }

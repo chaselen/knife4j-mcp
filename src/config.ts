@@ -3,6 +3,7 @@ import { SwaggerServerConfig } from "./types.js";
 const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 15 * 1000;
 const DEFAULT_FETCH_CONCURRENCY = 8;
+const DEFAULT_EXTERNAL_REF_LIMIT = 32;
 
 function parseHeaders(rawValue: string | undefined): Record<string, string> {
   if (!rawValue) {
@@ -78,6 +79,21 @@ function parseFetchConcurrency(rawValue: string | undefined): number {
   return parsed;
 }
 
+function parseExternalRefLimit(rawValue: string | undefined): number {
+  if (!rawValue) {
+    return DEFAULT_EXTERNAL_REF_LIMIT;
+  }
+
+  const parsed = Number(rawValue);
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 200) {
+    throw new Error(
+      "SWAGGER_EXTERNAL_REF_LIMIT must be an integer between 0 and 200"
+    );
+  }
+
+  return parsed;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): SwaggerServerConfig {
   const swaggerResourcesUrl = env.SWAGGER_RESOURCES_URL?.trim();
   if (!swaggerResourcesUrl) {
@@ -93,5 +109,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): SwaggerServerC
     cacheTtlMs: parseCacheTtl(env.CACHE_TTL_MS),
     requestTimeoutMs: parseRequestTimeout(env.SWAGGER_REQUEST_TIMEOUT_MS),
     fetchConcurrency: parseFetchConcurrency(env.SWAGGER_FETCH_CONCURRENCY),
+    externalRefLimit: parseExternalRefLimit(env.SWAGGER_EXTERNAL_REF_LIMIT),
   };
 }

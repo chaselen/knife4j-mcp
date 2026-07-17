@@ -9,6 +9,7 @@ const config: SwaggerServerConfig = {
   cacheTtlMs: 60_000,
   requestTimeoutMs: 1_000,
   fetchConcurrency: 8,
+  externalRefLimit: 32,
 };
 
 function jsonResponse(value: unknown, init?: ResponseInit): Response {
@@ -242,6 +243,138 @@ test("API detail compact mode removes duplicated raw fields", async () => {
     assert.equal(containsKey(compact, "rawOperation"), false);
     assert.equal(containsKey(compact, "raw"), false);
     assert.deepEqual(compact?.requestBody, full?.requestBody);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("API detail exposes operation metadata and expanded response data", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/swagger-resources")) {
+      return jsonResponse([{ name: "users", url: "/users.json" }]);
+    }
+    return jsonResponse({
+      openapi: "3.1.0",
+      security: [{ bearerAuth: [] }],
+      servers: [{ url: "/api" }],
+      paths: {
+        "/users": {
+          post: {
+            operationId: "createUser",
+            deprecated: true,
+            externalDocs: { url: "https://docs.example/create-user" },
+            responses: {
+              "201": {
+                description: "Created",
+                headers: {
+                  Location: { schema: { type: "string", format: "uri" } },
+                },
+                content: {
+                  "application/json": {
+                    example: { id: "1" },
+                    schema: { type: "object" },
+                  },
+                },
+                links: { user: { operationId: "getUser" } },
+              },
+            },
+          },
+        },
+      },
+      components: {
+        securitySchemes: {
+          bearerAuth: { type: "http", scheme: "bearer" },
+        },
+      },
+    });
+  };
+
+  try {
+    const registry = new SwaggerRegistry(config);
+    await registry.refresh();
+    const detail = registry.getApiDetail("users", "/users", "post", {
+      includeRaw: false,
+    });
+
+    assert.equal(detail?.operationId, "createUser");
+    assert.equal(detail?.deprecated, true);
+    assert.deepEqual(detail?.security, [{ bearerAuth: [] }]);
+    assert.deepEqual(detail?.servers, [{ url: "/api" }]);
+    assert.deepEqual(detail?.produces, ["application/json"]);
+    assert.equal(
+      (detail?.resolvedResponses as Record<string, any>)["201"].headers.Location
+        .schema.format,
+      "uri"
+    );
+    assert.deepEqual(
+      (detail?.resolvedResponses as Record<string, any>)["201"].content[
+        "application/json"
+      ].example,
+      { id: "1" }
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("external schema references are bundled and recursively expanded", async () => {
+  const originalFetch = globalThis.fetch;
+  const requestedUrls: string[] = [];
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    requestedUrls.push(url);
+    if (url.endsWith("/swagger-resources")) {
+      return jsonResponse([{ name: "users", url: "/specs/users.json" }]);
+    }
+    if (url.endsWith("/specs/models.json")) {
+      return jsonResponse({
+        User: {
+          type: "object",
+          properties: { address: { $ref: "#/Address" } },
+        },
+        Address: {
+          type: "object",
+          properties: { city: { type: "string" } },
+        },
+      });
+    }
+    return jsonResponse({
+      openapi: "3.0.3",
+      paths: {
+        "/users": {
+          post: {
+            requestBody: {
+              content: {
+                "application/json": {
+                  schema: { $ref: "./models.json#/User" },
+                },
+              },
+            },
+            responses: {},
+          },
+        },
+      },
+    });
+  };
+
+  try {
+    const registry = new SwaggerRegistry(config);
+    await registry.refresh();
+    const detail = registry.getApiDetail("users", "/users", "post", {
+      includeRaw: false,
+    });
+    const requestBody = detail?.resolvedRequestBody as Record<string, any>;
+    const schema = requestBody.content["application/json"].schema;
+
+    assert.equal(schema.refName, "User");
+    assert.equal(schema.properties.address.refName, "Address");
+    assert.equal(schema.properties.address.properties.city.type, "string");
+    assert.equal(
+      requestedUrls.filter((url) => url.endsWith("/specs/models.json")).length,
+      1
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }
