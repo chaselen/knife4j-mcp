@@ -30,6 +30,57 @@ function toStringArray(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === "string");
 }
 
+function parameterKey(
+  parameter: unknown,
+  rawSpec: Record<string, unknown>
+): string | undefined {
+  const resolved =
+    isRecord(parameter) && typeof parameter.$ref === "string"
+      ? resolveRefRaw(rawSpec, parameter.$ref)?.raw
+      : parameter;
+
+  if (
+    !isRecord(resolved) ||
+    typeof resolved.name !== "string" ||
+    typeof resolved.in !== "string"
+  ) {
+    return undefined;
+  }
+
+  return `${resolved.in}\u0000${resolved.name}`;
+}
+
+function mergeParameters(
+  pathParameters: unknown[],
+  operationParameters: unknown[],
+  rawSpec: Record<string, unknown>
+): unknown[] {
+  const merged = [...pathParameters];
+  const indexes = new Map<string, number>();
+
+  merged.forEach((parameter, index) => {
+    const key = parameterKey(parameter, rawSpec);
+    if (key) {
+      indexes.set(key, index);
+    }
+  });
+
+  for (const parameter of operationParameters) {
+    const key = parameterKey(parameter, rawSpec);
+    const existingIndex = key ? indexes.get(key) : undefined;
+    if (existingIndex === undefined) {
+      if (key) {
+        indexes.set(key, merged.length);
+      }
+      merged.push(parameter);
+    } else {
+      merged[existingIndex] = parameter;
+    }
+  }
+
+  return merged;
+}
+
 function specType(rawSpec: Record<string, unknown>): LoadedModuleSpec["specType"] {
   if (typeof rawSpec.swagger === "string" && rawSpec.swagger.startsWith("2.")) {
     return "swagger2";
@@ -109,7 +160,11 @@ export function extractApiEntries(moduleSpec: LoadedModuleSpec): ApiIndexEntry[]
             : pathProduces.length > 0
               ? pathProduces
               : globalProduces,
-        parameters: [...pathParameters, ...operationParameters],
+        parameters: mergeParameters(
+          pathParameters,
+          operationParameters,
+          moduleSpec.rawSpec
+        ),
         requestBody: operationValue.requestBody,
         responses: operationValue.responses,
         operation: operationValue,
@@ -186,7 +241,10 @@ function resolveRefRaw(
     };
   }
 
-  const tokens = ref.slice(2).split("/");
+  const tokens = ref
+    .slice(2)
+    .split("/")
+    .map((token) => token.replace(/~1/g, "/").replace(/~0/g, "~"));
   let current: unknown = spec;
   for (const token of tokens) {
     if (!isRecord(current)) {
@@ -196,7 +254,8 @@ function resolveRefRaw(
     current = current[token];
   }
 
-  const group = tokens[0] ?? "";
+  const group =
+    tokens[0] === "components" ? (tokens[1] ?? "") : (tokens[0] ?? "");
   const name = tokens[tokens.length - 1] ?? ref;
 
   const kind: RefSummary["kind"] =

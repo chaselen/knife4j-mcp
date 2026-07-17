@@ -1,6 +1,7 @@
 import { SwaggerServerConfig } from "./types.js";
 
 const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 15 * 1000;
 
 function parseHeaders(rawValue: string | undefined): Record<string, string> {
   if (!rawValue) {
@@ -48,6 +49,19 @@ function parseCacheTtl(rawValue: string | undefined): number {
   return parsed;
 }
 
+function parseRequestTimeout(rawValue: string | undefined): number {
+  if (!rawValue) {
+    return DEFAULT_REQUEST_TIMEOUT_MS;
+  }
+
+  const parsed = Number(rawValue);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error("SWAGGER_REQUEST_TIMEOUT_MS must be a positive number");
+  }
+
+  return parsed;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): SwaggerServerConfig {
   const swaggerResourcesUrl = env.SWAGGER_RESOURCES_URL?.trim();
   if (!swaggerResourcesUrl) {
@@ -61,5 +75,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): SwaggerServerC
     headers: parseHeaders(env.SWAGGER_HEADERS),
     moduleAllowlist: parseAllowlist(env.SWAGGER_MODULE_ALLOWLIST),
     cacheTtlMs: parseCacheTtl(env.CACHE_TTL_MS),
+    requestTimeoutMs: parseRequestTimeout(env.SWAGGER_REQUEST_TIMEOUT_MS),
   };
 }

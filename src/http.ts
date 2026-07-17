@@ -42,6 +42,7 @@ export async function fetchJson<T>(
     response = await fetch(url, {
       method: "GET",
       headers,
+      signal: AbortSignal.timeout(config.requestTimeoutMs),
     });
   } catch (error) {
     throw new Error(`Network error for ${url}: ${String(error)}`);

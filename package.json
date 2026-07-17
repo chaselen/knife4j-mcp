@@ -8,7 +8,7 @@
     "knife4j-mcp": "./dist/src/index.js"
   },
   "files": [
-    "dist",
+    "dist/src",
     "README.md",
     "LICENSE"
   ],
@@ -31,6 +31,7 @@
     "mock:swagger:dev": "node --import tsx examples/mock-swagger-server.ts",
     "test:smoke": "node dist/scripts/smoke-test.js",
     "check": "tsc --noEmit -p tsconfig.json",
+    "test": "npm run build && node --test dist/test/*.test.js",
     "prepublishOnly": "npm run build"
   },
   "keywords": [

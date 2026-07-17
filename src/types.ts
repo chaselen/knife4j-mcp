@@ -9,7 +9,7 @@ export type HttpMethod =
   | "trace";
 
 export interface SwaggerResource {
-  name: string;
+  name?: string;
   url?: string;
   location?: string;
   swaggerVersion?: string;
@@ -50,6 +50,8 @@ export interface ModuleLoadState {
   specType?: LoadedModuleSpec["specType"];
   operationCount?: number;
   fetchedAt?: string;
+  /** 是否正在使用上一次成功刷新的缓存 */
+  stale?: boolean;
 }
 
 export interface SwaggerServerConfig {
@@ -59,6 +61,7 @@ export interface SwaggerServerConfig {
   headers: Record<string, string>;
   moduleAllowlist?: Set<string>;
   cacheTtlMs: number;
+  requestTimeoutMs: number;
 }
 
 export interface SearchParams {
@@ -79,6 +82,7 @@ export interface SpecSummary {
   operationCount?: number;
   fetchedAt?: string;
   error?: string;
+  stale?: boolean;
 }
 
 export interface RefreshResult {

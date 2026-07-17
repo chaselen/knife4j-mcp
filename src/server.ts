@@ -13,7 +13,7 @@ function structured(value: unknown): Record<string, unknown> {
 export function createServer(registry: SwaggerRegistry): McpServer {
   const server = new McpServer({
     name: "knife4j-mcp",
-    version: "0.1.0",
+    version: "0.3.0",
   });
 
   server.registerTool(
@@ -38,6 +38,7 @@ export function createServer(registry: SwaggerRegistry): McpServer {
             operationCount: z.number().optional(),
             fetchedAt: z.string().optional(),
             error: z.string().optional(),
+            stale: z.boolean().optional(),
           })
         ),
         errors: z.array(z.string()),
@@ -162,6 +163,7 @@ export function createServer(registry: SwaggerRegistry): McpServer {
             operationCount: z.number().optional(),
             fetchedAt: z.string().optional(),
             error: z.string().optional(),
+            stale: z.boolean().optional(),
           })
         ),
         errors: z.array(z.string()),

@@ -191,6 +191,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isSwaggerResource(value: unknown): value is SwaggerResource {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return [value.name, value.url, value.location, value.swaggerVersion].every(
+    (item) => item === undefined || typeof item === "string"
+  );
+}
+
 /**
  * 为单个 API 生成若干等价路径别名。
  *
@@ -379,6 +389,7 @@ export class SwaggerRegistry {
       operationCount: state.operationCount,
       fetchedAt: state.fetchedAt,
       error: state.error,
+      stale: state.stale,
     }));
   }
 
@@ -546,8 +557,18 @@ export class SwaggerRegistry {
       this.config.swaggerBaseUrl
     );
 
-    const resources = await fetchJson<SwaggerResource[]>(resourcesUrl, this.config);
-    const filteredResources = this.filterResources(resources);
+    const resources = await fetchJson<unknown>(resourcesUrl, this.config);
+    if (!Array.isArray(resources)) {
+      throw new Error("swagger-resources response must be an array");
+    }
+    const validResources = resources.filter(isSwaggerResource);
+    const invalidResourceCount = resources.length - validResources.length;
+    if (invalidResourceCount > 0) {
+      throw new Error(
+        `swagger-resources contains ${invalidResourceCount} invalid entr${invalidResourceCount === 1 ? "y" : "ies"}`
+      );
+    }
+    const filteredResources = this.filterResources(validResources);
 
     const moduleStates = new Map<string, ModuleLoadState>();
     const moduleSpecs = new Map<string, LoadedModuleSpec>();
@@ -571,10 +592,17 @@ export class SwaggerRegistry {
           return;
         }
 
-        const specUrl = resolveUrl(resourceUrl, this.config, resourcesUrl);
+        const specUrl = resolveUrl(
+          resourceUrl,
+          this.config,
+          this.config.swaggerBaseUrl ?? resourcesUrl
+        );
 
         try {
-          const rawSpec = await fetchJson<Record<string, unknown>>(specUrl, this.config);
+          const rawSpec = await fetchJson<unknown>(specUrl, this.config);
+          if (!isRecord(rawSpec)) {
+            throw new Error(`Spec ${specUrl} must be a JSON object`);
+          }
           const detectedType = detectSpecType(rawSpec);
           const moduleSpec: LoadedModuleSpec = {
             module,
@@ -601,6 +629,27 @@ export class SwaggerRegistry {
           const message = String(error);
           logger.warn("Failed to load module spec", { module, specUrl, error: message });
           errors.push(`${module}: ${message}`);
+          const previousSpec = this.moduleSpecs.get(module);
+          if (previousSpec) {
+            const previousEntries = this.apiEntries.filter(
+              (entry) => entry.module === module
+            );
+            moduleSpecs.set(module, previousSpec);
+            apiEntries.push(...previousEntries);
+            moduleStates.set(module, {
+              module,
+              displayName: previousSpec.displayName,
+              specUrl: previousSpec.specUrl,
+              status: "loaded",
+              specType: previousSpec.specType,
+              operationCount: previousEntries.length,
+              fetchedAt: previousSpec.fetchedAt,
+              stale: true,
+              error: message,
+            });
+            return;
+          }
+
           moduleStates.set(module, {
             module,
             displayName: resource.name || module,
