@@ -75,7 +75,19 @@ export interface SearchParams {
   tag?: string;
   module?: string;
   method?: string;
+  kind?: ApiIndexEntry["kind"];
+  deprecated?: boolean;
   limit?: number;
+  offset?: number;
+}
+
+export interface ApiSearchResult {
+  total: number;
+  returned: number;
+  offset: number;
+  limit: number;
+  hasMore: boolean;
+  results: ApiIndexEntry[];
 }
 
 export interface SpecSummary {

@@ -12,6 +12,7 @@ import {
 } from "./swagger-parser.js";
 import {
   ApiIndexEntry,
+  ApiSearchResult,
   LoadedModuleSpec,
   ModuleLoadState,
   RefreshResult,
@@ -470,7 +471,15 @@ export class SwaggerRegistry {
    * 2. 再做简单打分，把更像目标结果的接口排前面
    */
   findApi(params: SearchParams): ApiIndexEntry[] {
+    return this.searchApi(params).results;
+  }
+
+  /**
+   * 搜索接口并返回完整分页信息。
+   */
+  searchApi(params: SearchParams): ApiSearchResult {
     const limit = params.limit && params.limit > 0 ? params.limit : 20;
+    const offset = params.offset && params.offset > 0 ? params.offset : 0;
     const query = normalizeForSearch(params.query);
     const path = normalizeForSearch(params.path);
     const pathNeedles = expandRouteNeedles(params.path);
@@ -478,6 +487,7 @@ export class SwaggerRegistry {
     const tag = normalizeForSearch(params.tag);
     const module = normalizeModuleForSearch(params.module);
     const method = normalizeForSearch(params.method);
+    const kind = params.kind;
 
     const scored: Array<{ entry: ApiIndexEntry; score: number }> = [];
 
@@ -489,6 +499,17 @@ export class SwaggerRegistry {
       }
 
       if (method && normalizeForSearch(entry.method) !== method) {
+        continue;
+      }
+
+      if (kind && entry.kind !== kind) {
+        continue;
+      }
+
+      if (
+        params.deprecated !== undefined &&
+        (entry.operation.deprecated === true) !== params.deprecated
+      ) {
         continue;
       }
 
@@ -526,10 +547,32 @@ export class SwaggerRegistry {
       });
     }
 
-    return scored
-      .sort((left, right) => right.score - left.score)
-      .slice(0, limit)
+    const sorted = scored.sort((left, right) => {
+      const scoreDifference = right.score - left.score;
+      if (scoreDifference !== 0) {
+        return scoreDifference;
+      }
+
+      return [left.entry.module, left.entry.path, left.entry.method]
+        .join("\u0000")
+        .localeCompare(
+          [right.entry.module, right.entry.path, right.entry.method].join(
+            "\u0000"
+          )
+        );
+    });
+    const results = sorted
+      .slice(offset, offset + limit)
       .map((item) => item.entry);
+
+    return {
+      total: sorted.length,
+      returned: results.length,
+      offset,
+      limit,
+      hasMore: offset + results.length < sorted.length,
+      results,
+    };
   }
 
   /**
@@ -542,15 +585,35 @@ export class SwaggerRegistry {
     options: { includeRaw?: boolean } = {}
   ): Record<string, unknown> | null {
     const normalizedModule = normalizeModuleForSearch(moduleName);
-    const normalizedPath = path.trim();
+    const requestedPath = path.trim();
+    const normalizedPath = normalizeRoutePath(requestedPath);
     const normalizedMethod = normalizeForSearch(method);
 
-    const entry = this.apiEntries.find(
-      (candidate) =>
-        normalizeModuleForSearch(candidate.module) === normalizedModule &&
-        candidate.path === normalizedPath &&
-        candidate.method === normalizedMethod
-    );
+    const entry = this.apiEntries.find((candidate) => {
+      if (
+        normalizeModuleForSearch(candidate.module) !== normalizedModule ||
+        candidate.method !== normalizedMethod
+      ) {
+        return false;
+      }
+
+      if (candidate.path === requestedPath) {
+        return true;
+      }
+      if (
+        candidate.kind === "path" &&
+        normalizeRoutePath(candidate.path) === normalizedPath
+      ) {
+        return true;
+      }
+
+      return (
+        candidate.kind === "path" &&
+        this.getSearchMetadata(candidate).pathAliases.includes(
+          normalizeForSearch(normalizedPath)
+        )
+      );
+    });
 
     if (!entry) {
       return null;

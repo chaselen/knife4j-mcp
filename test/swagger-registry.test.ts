@@ -379,3 +379,82 @@ test("external schema references are bundled and recursively expanded", async ()
     globalThis.fetch = originalFetch;
   }
 });
+
+test("search returns stable pagination metadata and supports filters", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/swagger-resources")) {
+      return jsonResponse([{ name: "catalog", url: "/catalog.json" }]);
+    }
+    return jsonResponse({
+      openapi: "3.1.0",
+      paths: {
+        "/items/c": { get: { responses: {} } },
+        "/items/a": { get: { deprecated: true, responses: {} } },
+        "/items/b": { post: { responses: {} } },
+      },
+      webhooks: {
+        itemChanged: { post: { responses: {} } },
+      },
+    });
+  };
+
+  try {
+    const registry = new SwaggerRegistry(config);
+    await registry.refresh();
+
+    const firstPage = registry.searchApi({ limit: 2 });
+    const secondPage = registry.searchApi({ limit: 2, offset: 2 });
+    const activePaths = registry.searchApi({
+      kind: "path",
+      deprecated: false,
+    });
+
+    assert.equal(firstPage.total, 4);
+    assert.equal(firstPage.returned, 2);
+    assert.equal(firstPage.hasMore, true);
+    assert.deepEqual(
+      [...firstPage.results, ...secondPage.results].map((item) => item.path),
+      ["/items/a", "/items/b", "/items/c", "itemChanged"]
+    );
+    assert.equal(secondPage.hasMore, false);
+    assert.deepEqual(
+      activePaths.results.map((item) => item.path),
+      ["/items/b", "/items/c"]
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("API detail accepts normalized and gateway-prefixed paths", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/swagger-resources")) {
+      return jsonResponse([{ name: "users", url: "/gateway/users/v2/api-docs" }]);
+    }
+    return jsonResponse({
+      swagger: "2.0",
+      basePath: "/gateway",
+      paths: { "/users/{id}": { get: { responses: {} } } },
+    });
+  };
+
+  try {
+    const registry = new SwaggerRegistry(config);
+    await registry.refresh();
+
+    assert.equal(
+      registry.getApiDetail("users", "/users/{id}/", "GET")?.path,
+      "/users/{id}"
+    );
+    assert.equal(
+      registry.getApiDetail("users", "/gateway/users/{id}", "get")?.path,
+      "/users/{id}"
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

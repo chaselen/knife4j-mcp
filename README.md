@@ -181,7 +181,10 @@ npx -y @chaselen/knife4j-mcp
 对外只提供 4 个核心 tools：
 
 - `list_specs`：列出模块、spec 地址、加载状态和接口数量
-- `find_api`：按关键词、path、tag、module、method 搜索接口
+- `find_api`：按关键词、path、tag、module、method、接口类型和弃用状态搜索接口
+  - 支持 `offset` + `limit` 分页
+  - `total` 表示全部命中数，`returned` 表示本页数量，`hasMore` 表示是否还有后续结果
+  - 相同相关性分数下使用稳定排序，便于可靠翻页
 - `get_api_detail`：获取单个接口的完整详情，并递归展开请求/响应 schema
   - 默认保持完整兼容输出
   - 传入 `includeRaw: false` 可省略递归结果中的 `raw` 和顶层 `rawOperation`，减少 Agent 上下文占用
@@ -194,6 +197,7 @@ npx -y @chaselen/knife4j-mcp
 - 支持 Swagger 2.0，并尽量兼容 OpenAPI 3
 - 支持按路径、关键词、tag、method 等条件搜索接口
 - 在刷新阶段预计算路径别名和全文搜索文本，减少查询时的重复解析
+- `get_api_detail` 可使用原始短路径、规范化路径或可唯一匹配的完整网关路径
 - 支持通过 `get_api_detail` 获取完整接口详情，并递归展开请求/响应 schema
 - 详情会显式返回 `operationId`、弃用状态、认证要求、servers、externalDocs、callbacks 和 security schemes
 - 请求与响应详情支持 examples、encoding、响应 headers 与 links

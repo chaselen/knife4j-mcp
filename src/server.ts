@@ -31,7 +31,6 @@ export function createServer(registry: SwaggerRegistry): McpServer {
         totalOperations: z.number(),
         modules: z.array(
           z.object({
-            kind: z.enum(["path", "webhook"]),
             module: z.string(),
             displayName: z.string(),
             specUrl: z.string(),
@@ -68,18 +67,27 @@ export function createServer(registry: SwaggerRegistry): McpServer {
         tag: z.string().optional(),
         module: z.string().optional(),
         method: z.string().optional(),
+        kind: z.enum(["path", "webhook"]).optional(),
+        deprecated: z.boolean().optional(),
         limit: z.number().int().positive().max(100).optional(),
+        offset: z.number().int().nonnegative().optional(),
       },
       outputSchema: {
         total: z.number(),
+        returned: z.number(),
+        offset: z.number(),
+        limit: z.number(),
+        hasMore: z.boolean(),
         results: z.array(
           z.object({
+            kind: z.enum(["path", "webhook"]),
             module: z.string(),
             method: z.string(),
             path: z.string(),
             summary: z.string().optional(),
             operationId: z.string().optional(),
             tags: z.array(z.string()),
+            deprecated: z.boolean(),
             specUrl: z.string(),
           })
         ),
@@ -87,7 +95,8 @@ export function createServer(registry: SwaggerRegistry): McpServer {
     },
     async (args) => {
       await registry.ensureLoaded();
-      const results = registry.findApi(args).map((item) => ({
+      const searchResult = registry.searchApi(args);
+      const results = searchResult.results.map((item) => ({
         kind: item.kind,
         module: item.module,
         method: item.method,
@@ -95,11 +104,16 @@ export function createServer(registry: SwaggerRegistry): McpServer {
         summary: item.summary,
         operationId: item.operationId,
         tags: item.tags,
+        deprecated: item.operation.deprecated === true,
         specUrl: item.specUrl,
       }));
 
       const payload = {
-        total: results.length,
+        total: searchResult.total,
+        returned: searchResult.returned,
+        offset: searchResult.offset,
+        limit: searchResult.limit,
+        hasMore: searchResult.hasMore,
         results,
       };
 
