@@ -14,6 +14,24 @@ test("loadConfig provides a request timeout and accepts an override", () => {
 
   assert.equal(defaults.requestTimeoutMs, 15_000);
   assert.equal(overridden.requestTimeoutMs, 2_500);
+  assert.equal(defaults.fetchConcurrency, 8);
+});
+
+test("loadConfig validates module fetch concurrency", () => {
+  const configured = loadConfig({
+    SWAGGER_RESOURCES_URL: "https://gateway.example/swagger-resources",
+    SWAGGER_FETCH_CONCURRENCY: "3",
+  });
+
+  assert.equal(configured.fetchConcurrency, 3);
+  assert.throws(
+    () =>
+      loadConfig({
+        SWAGGER_RESOURCES_URL: "https://gateway.example/swagger-resources",
+        SWAGGER_FETCH_CONCURRENCY: "0",
+      }),
+    /between 1 and 100/
+  );
 });
 
 test("resolveUrl uses the selected spec base for relative module URLs", () => {

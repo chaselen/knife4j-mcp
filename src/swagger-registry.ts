@@ -31,6 +31,32 @@ function uniqueStringList(values: string[]): string[] {
   return [...new Set(values)];
 }
 
+async function mapWithConcurrency<T>(
+  values: T[],
+  concurrency: number,
+  iteratee: (value: T) => Promise<void>
+): Promise<void> {
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    while (nextIndex < values.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      const value = values[index];
+      if (value !== undefined) {
+        await iteratee(value);
+      }
+    }
+  }
+
+  await Promise.all(
+    Array.from(
+      { length: Math.min(concurrency, values.length) },
+      async () => worker()
+    )
+  );
+}
+
 function normalizeForSearch(value: string | undefined): string {
   return (value ?? "").trim().toLowerCase();
 }
@@ -348,6 +374,7 @@ function stripRawFields(value: unknown): unknown {
 export class SwaggerRegistry {
   private readonly config: SwaggerServerConfig;
   private lastRefreshAt = 0;
+  private lastRefreshAttemptAt = 0;
   private apiEntries: ApiIndexEntry[] = [];
   private moduleSpecs = new Map<string, LoadedModuleSpec>();
   private moduleStates = new Map<string, ModuleLoadState>();
@@ -380,7 +407,25 @@ export class SwaggerRegistry {
     if (!this.refreshPromise) {
       this.refreshPromise = this.reload()
         .catch((error) => {
-          this.lastErrors.push(String(error));
+          const message = String(error);
+          this.lastErrors = uniqueStringList([...this.lastErrors, message]);
+          this.lastRefreshAttemptAt = Date.now();
+
+          if (this.moduleStates.size > 0) {
+            this.moduleStates = new Map(
+              [...this.moduleStates].map(([module, state]) => [
+                module,
+                state.status === "loaded"
+                  ? { ...state, stale: true, error: message }
+                  : state,
+              ])
+            );
+            logger.warn("Swagger resources refresh failed; using stale index", {
+              error: message,
+            });
+            return this.buildRefreshResult();
+          }
+
           throw error;
         })
         .finally(() => {
@@ -582,20 +627,47 @@ export class SwaggerRegistry {
     }
     const validResources = resources.filter(isSwaggerResource);
     const invalidResourceCount = resources.length - validResources.length;
-    if (invalidResourceCount > 0) {
-      throw new Error(
-        `swagger-resources contains ${invalidResourceCount} invalid entr${invalidResourceCount === 1 ? "y" : "ies"}`
-      );
-    }
     const filteredResources = this.filterResources(validResources);
 
     const moduleStates = new Map<string, ModuleLoadState>();
     const moduleSpecs = new Map<string, LoadedModuleSpec>();
     const apiEntries: ApiIndexEntry[] = [];
-    const errors: string[] = [];
+    const errors: string[] =
+      invalidResourceCount > 0
+        ? [
+            `swagger-resources contains ${invalidResourceCount} invalid entr${invalidResourceCount === 1 ? "y" : "ies"}`,
+          ]
+        : [];
 
-    await Promise.all(
-      filteredResources.map(async (resource) => {
+    const moduleCounts = new Map<string, number>();
+    for (const resource of filteredResources) {
+      const module = normalizeModuleName(resource);
+      moduleCounts.set(module, (moduleCounts.get(module) ?? 0) + 1);
+    }
+    const uniqueResources = filteredResources.filter((resource) => {
+      const module = normalizeModuleName(resource);
+      if ((moduleCounts.get(module) ?? 0) === 1) {
+        return true;
+      }
+
+      if (!moduleStates.has(module)) {
+        const error = `Duplicate module name: ${module}`;
+        errors.push(error);
+        moduleStates.set(module, {
+          module,
+          displayName: resource.name || module,
+          specUrl: "",
+          status: "failed",
+          error,
+        });
+      }
+      return false;
+    });
+
+    await mapWithConcurrency(
+      uniqueResources,
+      this.config.fetchConcurrency,
+      async (resource) => {
         const module = normalizeModuleName(resource);
         const resourceUrl = resource.location ?? resource.url;
         if (!resourceUrl) {
@@ -623,6 +695,12 @@ export class SwaggerRegistry {
             throw new Error(`Spec ${specUrl} must be a JSON object`);
           }
           const detectedType = detectSpecType(rawSpec);
+          if (detectedType === "unknown") {
+            throw new Error(`Spec ${specUrl} is not Swagger 2.x or OpenAPI 3.x`);
+          }
+          if (!isRecord(rawSpec.paths)) {
+            throw new Error(`Spec ${specUrl} must contain a paths object`);
+          }
           const moduleSpec: LoadedModuleSpec = {
             module,
             displayName: resource.name || module,
@@ -677,7 +755,7 @@ export class SwaggerRegistry {
             error: message,
           });
         }
-      })
+      }
     );
 
     this.apiEntries = apiEntries;
@@ -686,6 +764,7 @@ export class SwaggerRegistry {
     this.moduleStates = moduleStates;
     this.lastErrors = uniqueStringList(errors);
     this.lastRefreshAt = Date.now();
+    this.lastRefreshAttemptAt = this.lastRefreshAt;
 
     return this.buildRefreshResult();
   }
@@ -845,12 +924,16 @@ export class SwaggerRegistry {
       refreshedAt: this.lastRefreshAt
         ? new Date(this.lastRefreshAt).toISOString()
         : new Date(0).toISOString(),
+      refreshAttemptedAt: this.lastRefreshAttemptAt
+        ? new Date(this.lastRefreshAttemptAt).toISOString()
+        : new Date(0).toISOString(),
       resourcesUrl: this.config.swaggerResourcesUrl,
       loadedModules,
       failedModules,
       totalOperations,
       modules,
       errors: this.lastErrors,
+      stale: modules.some((module) => module.stale === true),
     };
   }
 }

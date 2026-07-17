@@ -2,6 +2,7 @@ import { SwaggerServerConfig } from "./types.js";
 
 const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 15 * 1000;
+const DEFAULT_FETCH_CONCURRENCY = 8;
 
 function parseHeaders(rawValue: string | undefined): Record<string, string> {
   if (!rawValue) {
@@ -62,6 +63,21 @@ function parseRequestTimeout(rawValue: string | undefined): number {
   return parsed;
 }
 
+function parseFetchConcurrency(rawValue: string | undefined): number {
+  if (!rawValue) {
+    return DEFAULT_FETCH_CONCURRENCY;
+  }
+
+  const parsed = Number(rawValue);
+  if (!Number.isInteger(parsed) || parsed <= 0 || parsed > 100) {
+    throw new Error(
+      "SWAGGER_FETCH_CONCURRENCY must be an integer between 1 and 100"
+    );
+  }
+
+  return parsed;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): SwaggerServerConfig {
   const swaggerResourcesUrl = env.SWAGGER_RESOURCES_URL?.trim();
   if (!swaggerResourcesUrl) {
@@ -76,5 +92,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): SwaggerServerC
     moduleAllowlist: parseAllowlist(env.SWAGGER_MODULE_ALLOWLIST),
     cacheTtlMs: parseCacheTtl(env.CACHE_TTL_MS),
     requestTimeoutMs: parseRequestTimeout(env.SWAGGER_REQUEST_TIMEOUT_MS),
+    fetchConcurrency: parseFetchConcurrency(env.SWAGGER_FETCH_CONCURRENCY),
   };
 }

@@ -24,6 +24,7 @@ export function createServer(registry: SwaggerRegistry): McpServer {
         "List aggregated Knife4j / Swagger modules and their loading status. Use this for module discovery and diagnostics, not for reading API details or fetching spec URLs directly.",
       outputSchema: {
         refreshedAt: z.string(),
+        refreshAttemptedAt: z.string(),
         resourcesUrl: z.string(),
         loadedModules: z.number(),
         failedModules: z.number(),
@@ -42,6 +43,7 @@ export function createServer(registry: SwaggerRegistry): McpServer {
           })
         ),
         errors: z.array(z.string()),
+        stale: z.boolean(),
       },
     },
     async () => {
@@ -150,6 +152,7 @@ export function createServer(registry: SwaggerRegistry): McpServer {
         "Force a reload of swagger-resources and all module specs while keeping partial failures isolated. Use this when upstream docs changed or when a previous lookup returned stale results.",
       outputSchema: {
         refreshedAt: z.string(),
+        refreshAttemptedAt: z.string(),
         resourcesUrl: z.string(),
         loadedModules: z.number(),
         failedModules: z.number(),
@@ -168,6 +171,7 @@ export function createServer(registry: SwaggerRegistry): McpServer {
           })
         ),
         errors: z.array(z.string()),
+        stale: z.boolean(),
       },
     },
     async () => {

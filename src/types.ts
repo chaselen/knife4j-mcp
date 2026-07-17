@@ -62,6 +62,8 @@ export interface SwaggerServerConfig {
   moduleAllowlist?: Set<string>;
   cacheTtlMs: number;
   requestTimeoutMs: number;
+  /** 同时拉取模块文档的最大请求数 */
+  fetchConcurrency: number;
 }
 
 export interface SearchParams {
@@ -87,12 +89,15 @@ export interface SpecSummary {
 
 export interface RefreshResult {
   refreshedAt: string;
+  refreshAttemptedAt: string;
   resourcesUrl: string;
   loadedModules: number;
   failedModules: number;
   totalOperations: number;
   modules: SpecSummary[];
   errors: string[];
+  /** 是否包含因刷新失败而保留的旧索引 */
+  stale: boolean;
 }
 
 export interface RefSummary {

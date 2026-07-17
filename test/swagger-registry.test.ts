@@ -8,6 +8,7 @@ const config: SwaggerServerConfig = {
   headers: {},
   cacheTtlMs: 60_000,
   requestTimeoutMs: 1_000,
+  fetchConcurrency: 8,
 };
 
 function jsonResponse(value: unknown, init?: ResponseInit): Response {
@@ -64,6 +65,105 @@ test("refresh retains the previous module index after a transient failure", asyn
     assert.equal(refreshed.failedModules, 0);
     assert.equal(refreshed.modules[0]?.stale, true);
     assert.equal(registry.findApi({ path: "/users" }).length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("refresh keeps the complete stale index when swagger-resources fails", async () => {
+  const originalFetch = globalThis.fetch;
+  let failResources = false;
+
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/swagger-resources")) {
+      if (failResources) {
+        return jsonResponse({ error: "unavailable" }, { status: 503 });
+      }
+      return jsonResponse([{ name: "users", url: "/users.json" }]);
+    }
+    return jsonResponse({
+      swagger: "2.0",
+      paths: { "/users": { get: { responses: {} } } },
+    });
+  };
+
+  try {
+    const registry = new SwaggerRegistry(config);
+    await registry.refresh();
+    failResources = true;
+    const fallback = await registry.refresh();
+
+    assert.equal(fallback.stale, true);
+    assert.equal(fallback.modules[0]?.stale, true);
+    assert.match(fallback.errors[0] ?? "", /HTTP 503/);
+    assert.equal(registry.findApi({ path: "/users" }).length, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("refresh limits concurrent module requests", async () => {
+  const originalFetch = globalThis.fetch;
+  let activeRequests = 0;
+  let maximumActiveRequests = 0;
+
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/swagger-resources")) {
+      return jsonResponse(
+        Array.from({ length: 6 }, (_, index) => ({
+          name: `module-${index}`,
+          url: `/module-${index}.json`,
+        }))
+      );
+    }
+
+    activeRequests += 1;
+    maximumActiveRequests = Math.max(maximumActiveRequests, activeRequests);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    activeRequests -= 1;
+    return jsonResponse({ swagger: "2.0", paths: {} });
+  };
+
+  try {
+    const registry = new SwaggerRegistry({ ...config, fetchConcurrency: 2 });
+    const result = await registry.refresh();
+
+    assert.equal(result.loadedModules, 6);
+    assert.equal(maximumActiveRequests, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("refresh isolates duplicate modules and invalid specs", async () => {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith("/swagger-resources")) {
+      return jsonResponse([
+        { name: "duplicate", url: "/first.json" },
+        { name: "duplicate", url: "/second.json" },
+        { name: "invalid", url: "/invalid.json" },
+        { name: "valid", url: "/valid.json" },
+      ]);
+    }
+    if (url.endsWith("/invalid.json")) {
+      return jsonResponse({ title: "not an OpenAPI document" });
+    }
+    return jsonResponse({ swagger: "2.0", paths: {} });
+  };
+
+  try {
+    const registry = new SwaggerRegistry(config);
+    const result = await registry.refresh();
+
+    assert.equal(result.loadedModules, 1);
+    assert.equal(result.failedModules, 2);
+    assert.equal(result.modules.find((item) => item.module === "duplicate")?.status, "failed");
+    assert.equal(result.modules.find((item) => item.module === "invalid")?.status, "failed");
   } finally {
     globalThis.fetch = originalFetch;
   }
